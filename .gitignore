@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/*.csv
+st.log
+.DS_Store
+.streamlit/secrets.toml
+
+# Generated analysis artifacts (reproducible via `python -m src.pipeline`)
+outputs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
