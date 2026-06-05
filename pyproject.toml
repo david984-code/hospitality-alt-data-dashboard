@@ -1,0 +1,50 @@
+[project]
+name = "hospitality-alt-data-dashboard"
+version = "0.1.0"
+description = "Alt-data pipeline (TSA, Google Trends, BLS) nowcasting lodging demand for MAR/HLT/H, served via Streamlit."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "requests>=2.28",
+    "lxml>=4.9",
+    "yfinance>=0.2.40",
+    "pytrends>=4.9",
+    "streamlit>=1.30",
+    "plotly>=5.18",
+    "tenacity>=8.2",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "pandas-stubs",
+    "types-requests",
+]
+
+# This is a runnable application (root-level app.py / config.py), not an installable
+# library, so uv manages the environment without trying to build/install the project.
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "W"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
