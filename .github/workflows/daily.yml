@@ -1,0 +1,35 @@
+name: Daily data refresh
+
+# Re-runs the alt-data pipeline every morning and publishes the refreshed
+# outputs (summary.json + signal CSVs) as a downloadable build artifact.
+on:
+  schedule:
+    - cron: "0 12 * * *"  # 12:00 UTC daily
+  workflow_dispatch:        # allow manual runs from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync
+
+      # Google Trends rate-limits CI IPs aggressively, so stub it on schedule.
+      - name: Run pipeline
+        env:
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+        run: uv run python -m src.pipeline --force --skip-trends
+
+      - name: Upload refreshed outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: hospitality-outputs
+          path: outputs/
+          if-no-files-found: error
