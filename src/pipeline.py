@@ -30,6 +30,7 @@ class PipelineResult:
     equity: pd.DataFrame
     earnings_study: analysis.EarningsStudy
     risk: analysis.RiskMetrics
+    stress: analysis.StressTest | None = None  # overlay over full history (incl. COVID)
 
 
 def _trends_frame(tsa_s: pd.Series, force: bool, skip_trends: bool) -> pd.DataFrame:
@@ -66,6 +67,18 @@ def _extra_analysis(bt, signals, trends_df, price_df, earnings_df) -> tuple:
     return sig, equity, study, risk
 
 
+def _study_slices(tsa_full, trends_full, fred_full, prices_full, universe_full) -> tuple:
+    """Slice the fetched 2019+ history down to the clean STUDY_START study window."""
+    cut = pd.Timestamp(config.STUDY_START)
+    return (
+        tsa_full[tsa_full.index >= cut],
+        trends_full[trends_full.index >= cut],
+        fred_full[fred_full.index >= cut],
+        prices_full[prices_full.index >= cut],
+        universe_full[universe_full.index >= cut],
+    )
+
+
 def _analyze(
     tsa_s: pd.Series,
     trends_df: pd.DataFrame,
@@ -78,7 +91,6 @@ def _analyze(
         tsa_s, trends_df, fred_df, price_df, universe_df, earnings_df
     )
     sig, equity, study, risk = _extra_analysis(bt, signals, trends_df, price_df, earnings_df)
-
     _persist(nowcast, bt, validation, signals, anomalies, sig, study, risk)
     return PipelineResult(
         tsa_s,
@@ -101,13 +113,24 @@ def _analyze(
 
 
 def run(force: bool = False, skip_trends: bool = False) -> PipelineResult:
-    tsa_s = tsa.fetch(force=force)
-    fred_df = bls.fetch(force=force)
-    price_df = prices.fetch_prices(force=force)
-    universe_df = prices.fetch_universe_prices(force=force)
+    tsa_full = tsa.fetch(force=force)
+    fred_full = bls.fetch(force=force)
+    prices_full = prices.fetch_prices(force=force)
+    universe_full = prices.fetch_universe_prices(force=force)
     earnings_df = prices.fetch_earnings_dates(force=force)
-    trends_df = _trends_frame(tsa_s, force, skip_trends)
-    return _analyze(tsa_s, trends_df, fred_df, price_df, universe_df, earnings_df)
+    trends_full = _trends_frame(tsa_full, force, skip_trends)
+
+    tsa_s, trends_df, fred_df, price_df, universe_df = _study_slices(
+        tsa_full, trends_full, fred_full, prices_full, universe_full
+    )
+    res = _analyze(tsa_s, trends_df, fred_df, price_df, universe_df, earnings_df)
+    res.stress = analysis.stress_test(
+        tsa_full, trends_full, fred_full, prices_full, config.START_DATE
+    )
+    (config.OUTPUT_DIR / "covid_stress.json").write_text(
+        json.dumps(res.stress.risk.table.round(3).to_dict(orient="index"), indent=2)
+    )
+    return res
 
 
 def _nowcast_summary(nowcast) -> dict:
@@ -212,8 +235,12 @@ if __name__ == "__main__":
         f"(Welch p = {sig.gate_p:.4f})"
     )
 
-    print("\n=== RISK OVERLAY (signal vs always-long) ===")
+    print("\n=== RISK OVERLAY (signal vs always-long, study window) ===")
     print(res.risk.table.round(3).to_string())
+
+    if res.stress is not None:
+        print(f"\n=== COVID STRESS TEST (full history from {res.stress.start}) ===")
+        print(res.stress.risk.table.round(3).to_string())
 
     v = res.validation
     print("\n=== POOLED VALIDATION (full lodging universe) ===")

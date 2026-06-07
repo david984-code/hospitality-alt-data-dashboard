@@ -197,6 +197,27 @@ def test_risk_metrics_table():
     assert rm.table.loc["Signal (demand-gated)", "max_drawdown"] <= 0.0
 
 
+def test_stress_test_structure():
+    rng = np.random.RandomState(5)
+    days = pd.date_range("2020-01-01", periods=1400, freq="D")
+    tsa = pd.Series(2_000_000 * (1 + rng.normal(0.0002, 0.01, 1400)).cumprod(), index=days)
+    weeks = pd.date_range("2020-01-05", periods=200, freq="W")
+    trends = pd.DataFrame({t: rng.uniform(40, 80, 200) for t in config.TICKERS}, index=weeks)
+    months = pd.date_range("2020-01-31", periods=46, freq="ME")
+    fred = pd.DataFrame(
+        {"job_openings": rng.uniform(800, 1200, 46), "accom_emp": rng.uniform(1800, 2100, 46)},
+        index=months,
+    )
+    prices = pd.DataFrame(
+        {t: 100 * (1 + rng.normal(0.01, 0.05, 46)).cumprod() for t in config.TICKERS},
+        index=months,
+    )
+    stt = analysis.stress_test(tsa, trends, fred, prices, "2020-01-01")
+    assert set(stt.risk.table.index) == {"Signal (demand-gated)", "Always-long"}
+    assert list(stt.equity.columns) == ["strategy", "baseline"]
+    assert stt.start == "2020-01-01"
+
+
 def test_earnings_search_study():
     weeks = pd.date_range("2022-01-02", periods=120, freq="W")
     rng = np.random.RandomState(3)

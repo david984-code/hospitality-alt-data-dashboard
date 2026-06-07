@@ -54,8 +54,14 @@ BLS_ACCOM_EMP = "CEU7072100001"
 # Optional BLS registration key (raises the rate limit). Keyless works for our use.
 BLS_API_KEY = os.getenv("BLS_API_KEY", "")
 
-# History window for the study.
-START_DATE = "2022-01-01"
+# Fetch window. TSA daily throughput is only public from 2019 (earlier years 404).
+# We pull from 2019 so the COVID crash is available for the downturn stress test.
+START_DATE = "2019-01-01"
+
+# Main study window for the headline nowcast / signal / overlay. Starts in 2022 to
+# avoid the 2020-21 YoY base-effect distortions (2021 vs a near-zero 2020 base blows
+# up year-over-year math). The COVID period is used only in the stress test.
+STUDY_START = "2022-01-01"
 
 # Cache freshness in hours before a re-fetch is triggered.
 CACHE_TTL_HOURS = 12

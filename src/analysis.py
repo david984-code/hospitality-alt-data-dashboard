@@ -377,6 +377,27 @@ def risk_metrics(backtest: Backtest, prices: pd.DataFrame) -> RiskMetrics:
     return RiskMetrics(table=table, months=len(strat))
 
 
+@dataclass
+class StressTest:
+    risk: RiskMetrics
+    equity: pd.DataFrame
+    start: str
+
+
+def stress_test(
+    tsa_daily: pd.Series,
+    trends: pd.DataFrame,
+    fred_df: pd.DataFrame,
+    prices: pd.DataFrame,
+    start: str,
+) -> StressTest:
+    """Run the overlay over the full available history (incl. COVID) — the downturn test
+    the 2022+ study window can't provide. Same logic, longer window."""
+    signals = build_signals(tsa_daily, trends, fred_df)
+    bt = backtest_top2(prices, signals)
+    return StressTest(risk=risk_metrics(bt, prices), equity=equity_curves(bt, prices), start=start)
+
+
 # ----------------------------------------------------------------------------- earnings study
 @dataclass
 class EarningsStudy:
