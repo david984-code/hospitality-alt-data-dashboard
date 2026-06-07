@@ -61,9 +61,9 @@ with st.sidebar.expander("Methodology & data proxies"):
 # ----------------------------------------------------------------------------- header
 st.title("Hospitality Alt-Data Dashboard")
 st.markdown(
-    "A real-time **nowcast of US lodging demand** from public alternative data, with an "
-    "exploratory pre-earnings timing signal for **Marriott (MAR)**, **Hilton (HLT)**, "
-    "**Hyatt (H)**."
+    "A real-time **nowcast of US lodging demand** from public alternative data, plus a "
+    "demand-gated **risk overlay** across the major lodging franchisor brands "
+    f"({', '.join(config.TICKERS)})."
 )
 
 # ----------------------------------------------------------------------------- 1. NOWCAST (lead)
@@ -143,49 +143,57 @@ else:
 
 st.divider()
 
-# ----------------------------------------------------------------------------- 3. STRATEGY (exploratory)
+# ----------------------------------------------------------------------------- 3. RISK OVERLAY
 bt = res.backtest
 sig = res.significance
-st.header("3 · Exploratory timing signal")
-st.caption(
-    "⚠️ Small sample — treat as a research hypothesis, not a track record. "
-    f"Only {sig.n_months} months had the gate ON over a {len(m)}-month window."
+rt = res.risk.table
+s_row = rt.loc["Signal (demand-gated)"]
+b_row = rt.loc["Always-long"]
+
+st.header("3 · Demand-gated risk overlay")
+st.markdown(
+    "Be long the franchisor brands **only when travel demand is accelerating**; hold cash "
+    "otherwise. The pitch is *risk management*, not alpha: matching equity-like risk-adjusted "
+    "returns with a fraction of the exposure and drawdown."
 )
 
-k1, k2, k3, k4 = st.columns(4)
-k1.metric(
-    "Hit rate", f"{bt.hit_rate:.0%}", delta=f"{(bt.hit_rate - bt.baseline_hit):+.0%} vs baseline"
+r1, r2, r3, r4 = st.columns(4)
+r1.metric(
+    "Sharpe (overlay)",
+    f"{s_row['sharpe']:.2f}",
+    delta=f"{(s_row['sharpe'] - b_row['sharpe']):+.2f} vs always-long",
+    help="Annualized, rf = 0. Comparable Sharpe with far less time exposed.",
 )
-k2.metric(
-    "Mean return / position",
-    f"{bt.mean_return:+.1f}%",
-    delta=f"{(bt.mean_return - bt.baseline_mean):+.1f}% vs baseline",
+r2.metric(
+    "Max drawdown",
+    f"{s_row['max_drawdown']:.0%}",
+    delta=f"{(s_row['max_drawdown'] - b_row['max_drawdown']):+.0%} vs always-long",
+    help="Worst peak-to-trough. Smaller (less negative) is better.",
 )
-k3.metric("Signal-on months", f"{sig.n_months}", help=f"{bt.n_trades} positions (2 per month)")
-k4.metric("Baseline (always-long)", f"{bt.baseline_hit:.0%}  /  {bt.baseline_mean:+.1f}%")
+r3.metric("Time in market", f"{s_row['in_market']:.0%}", help="% of months actually invested.")
+r4.metric(
+    "Total growth",
+    f"{s_row['total_growth']:.2f}x",
+    delta=f"vs {b_row['total_growth']:.2f}x always-long",
+    delta_color="off",
+)
 
-st.markdown("**Statistical significance** (does the edge survive honest testing?)")
-s1, s2, s3 = st.columns(3)
-s1.metric(
-    "Per-position test",
-    pval_label(sig.naive_p),
-    help="Naive — treats 32 positions as independent. Overstated.",
+disp = pd.DataFrame(
+    {
+        "Sharpe": rt["sharpe"].round(2),
+        "Ann. return": (rt["ann_return"] * 100).round(1).astype(str) + "%",
+        "Ann. vol": (rt["ann_vol"] * 100).round(1).astype(str) + "%",
+        "Max drawdown": (rt["max_drawdown"] * 100).round(1).astype(str) + "%",
+        "Time in mkt": (rt["in_market"] * 100).round(0).astype(int).astype(str) + "%",
+        "Growth": rt["total_growth"].round(2).astype(str) + "x",
+    }
 )
-s2.metric(
-    "Clustered by month",
-    pval_label(sig.clustered_p),
-    help="1 observation per signal-on month — the honest test.",
-)
-s3.metric(
-    "Gate ON vs OFF",
-    pval_label(sig.gate_p),
-    delta=f"{sig.gate_on_mean:+.1f}% vs {sig.gate_off_mean:+.1f}%/mo",
-)
-st.caption(
-    "The naive per-position p-value looks strong, but the 2 names held in a given month move "
-    "together, so the effective sample is ~the number of signal-on months, not the position "
-    "count. Clustered by month, the edge is **borderline** and does not clear the bar versus "
-    "simply owning hotels in this post-COVID bull market."
+st.dataframe(disp, width="stretch")
+st.warning(
+    "⚠️ **Bull-market caveat:** the entire sample is post-COVID up-market, so the drawdown "
+    "protection — the whole point of the overlay — has never faced a real downturn. The "
+    "−8% vs −25% max drawdown is suggestive, not proven. Total return trails buy-and-hold "
+    "purely from cash drag (invested only ~30% of months)."
 )
 
 ec1, ec2 = st.columns([3, 2])
@@ -194,11 +202,9 @@ with ec1:
     if not eq.empty:
         st.markdown("**Cumulative growth of \\$1 (calendar time)**")
         eqfig = go.Figure()
-        eqfig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="Signal (cash when OFF)"))
+        eqfig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="Overlay (cash when OFF)"))
         eqfig.add_trace(
-            go.Scatter(
-                x=eq.index, y=eq["baseline"], name="Always-long MAR/HLT/H", line=dict(dash="dot")
-            )
+            go.Scatter(x=eq.index, y=eq["baseline"], name="Always-long", line=dict(dash="dot"))
         )
         eqfig.update_layout(
             height=300,
@@ -207,13 +213,14 @@ with ec1:
         )
         st.plotly_chart(eqfig, width="stretch")
 with ec2:
-    st.markdown("**Honest read of the curve**")
+    st.markdown("**Is the timing itself real?** (small-sample significance)")
     st.caption(
-        "The signal sits in cash ~60% of the time, so in a one-way bull market it **trails** "
-        "buy-and-hold on total return — cash drag. Its value is *per-invested-month quality* "
-        "(higher hit rate and mean return when it does hold), i.e. a risk-reduction overlay, "
-        "not a return maximizer. Showing this is the point: the data doesn't support an "
-        "alpha claim, and the dashboard says so."
+        f"Naive per-position {pval_label(sig.naive_p)} overstates it — the names held in a "
+        f"given month move together. Clustered by month: **{pval_label(sig.clustered_p)}**; "
+        f"gate-ON vs gate-OFF **{pval_label(sig.gate_p)}** "
+        f"({sig.gate_on_mean:+.1f}% vs {sig.gate_off_mean:+.1f}%/mo). "
+        f"Over only {sig.n_months} signal-on months the edge is borderline — which is exactly "
+        "why this is framed as a risk overlay, not an alpha claim."
     )
 
 st.markdown("**Out-of-sample validation by business model**")
@@ -237,8 +244,8 @@ v2.metric(
 st.caption(
     "The TSA-acceleration → next-month-return effect shows up in **both** business models "
     "(franchisors and REITs), on names the signal was never tuned on — which argues it's a "
-    "real sector-demand effect, not overfitting to the three headline tickers. Splitting the "
-    "two buckets matters because franchisors are fee/growth stories while REITs are "
+    "real sector-demand effect, not overfitting to the traded names. Splitting the two "
+    "buckets matters because franchisors are fee/growth stories while REITs are "
     "rate/RevPAR stories."
 )
 
