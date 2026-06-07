@@ -70,12 +70,12 @@ if res.stress is not None:
             f" plus a demand-gated risk overlay that cut COVID drawdown ~{1 - _s_dd / _b_dd:.0%}"
         )
 st.markdown(
-    f"**A real-time nowcast of US lodging demand (r = {res.nowcast.r_coincident:.2f}){_dd_cut} — "
-    "built entirely from free public alt-data.**"
+    f"**A real-time US lodging-demand nowcast{_dd_cut} — built entirely from free public "
+    "alt-data.**"
 )
 st.caption(
-    f"TSA throughput + Google Trends + BLS labor → signals for {', '.join(config.TICKERS)}. "
-    "Research / monitoring tool, not investment advice."
+    f"TSA throughput (primary) + BLS hospitality labor + Google Trends → signals for "
+    f"{', '.join(config.TICKERS)}. Research / monitoring tool, not investment advice."
 )
 
 # ----------------------------------------------------------------------------- 1. NOWCAST (lead)
@@ -108,17 +108,28 @@ with left:
     st.plotly_chart(fig, width="stretch")
 with right:
     st.metric(
-        "Coincident correlation r",
-        f"{nc.r_coincident:.2f}",
-        help="TSA YoY vs BLS Accommodation-employment YoY (demand proxy).",
+        "TSA–demand co-movement (MoM growth)",
+        f"r = {nc.r_mom_growth:.2f}",
+        help="Correlation of month-over-month growth — the honest co-movement, on CHANGES.",
+    )
+    cc_a, cc_b = st.columns(2)
+    cc_a.metric(
+        "Levels of YoY",
+        f"r = {nc.r_levels:.2f}",
+        help="Inflated — both series co-trend out of COVID.",
+    )
+    cc_b.metric(
+        "Differenced YoY", f"r = {nc.r_diff_yoy:.2f}", help="Strictest change-on-change measure."
     )
     st.caption(
-        f"TSA traveler volume tracks hospitality demand almost one-for-one "
-        f"(r = {nc.r_coincident:.2f}, contemporaneous; best lag = {nc.best_lag_months}m). "
-        "It doesn't *lead* the fundamentals — its value is **timeliness**: TSA prints in "
-        "1–2 days, vs weeks for BLS and a quarter for company earnings. Lag table:"
+        f"TSA and hotel demand genuinely co-move, but **honestly measure it on changes**: "
+        f"MoM-growth r = {nc.r_mom_growth:.2f}. The 'r = {nc.r_levels:.2f}' often quoted for these "
+        "series is **inflated by co-trending** (both climb out of the 2020 hole together). TSA's "
+        "real value is **timeliness** — it prints in 1–2 days vs weeks for BLS and a quarter for "
+        "earnings — not a near-perfect fit."
     )
-    st.dataframe(nc.table.round(3), width="stretch")
+    with st.expander("Lead-lag table"):
+        st.dataframe(nc.table.round(3), width="stretch")
 
 st.divider()
 
@@ -162,42 +173,46 @@ rt = res.risk.table
 s_row = rt.loc["Signal (demand-gated)"]
 b_row = rt.loc["Always-long"]
 
+dep = res.risk.deployed
 st.header("3 · Demand-gated risk overlay")
 st.markdown(
-    "Be long the franchisor brands **only when travel demand is accelerating**; hold cash "
-    "otherwise. The pitch is *risk management, not alpha* — and the value is the **timing "
-    "gate**; the brand-momentum stock selection is secondary (it adds little over equal-weight)."
+    "Be long the franchisor brands **only when travel demand is accelerating**, else hold cash. "
+    "Framed as *risk management, not alpha* — the value is the **timing gate** (brand selection "
+    "is secondary). Signal→execution: month-*t* TSA (known within ~2 days of month-end) sets "
+    "exposure for month *t+1* — no look-ahead."
 )
 
 r1, r2, r3, r4 = st.columns(4)
 r1.metric(
-    "Sharpe (overlay)",
-    f"{s_row['sharpe']:.2f}",
-    delta=f"{(s_row['sharpe'] - b_row['sharpe']):+.2f} vs always-long",
-    help="Annualized, rf = 0 (study window, 2022+).",
+    "Return on deployed capital",
+    f"{dep['ann_return']:.0%}",
+    help=(
+        f"Annualized over ONLY the {dep['n_invested']} invested months "
+        f"(~{s_row['in_market']:.0%} of the time; mean {dep['mean_per_month']:+.1%}/mo). "
+        "Conditional on being invested — not a whole-portfolio return, and small-sample."
+    ),
 )
 r2.metric(
+    "Deployed Sharpe",
+    f"{dep['sharpe']:.2f}",
+    help="Sharpe over invested months only — the honest 'is the capital working' read.",
+)
+r3.metric(
     "Max drawdown",
     f"{s_row['max_drawdown']:.0%}",
     delta=f"{(s_row['max_drawdown'] - b_row['max_drawdown']):+.0%} vs always-long",
-    help="Worst peak-to-trough. Smaller (less negative) is better.",
-)
-r3.metric(
-    "Time in market",
-    f"{s_row['in_market']:.0%}",
-    help="% of months actually invested (the rest in cash).",
+    help="Worst peak-to-trough (study window). Smaller (less negative) is better.",
 )
 r4.metric(
-    "Total growth",
-    f"{s_row['total_growth']:.2f}x",
-    help=(
-        f"vs {b_row['total_growth']:.2f}x always-long — lower by design: the overlay sits in "
-        "cash most months, so it trades total return for much less risk."
-    ),
+    "Time in market",
+    f"{s_row['in_market']:.0%}",
+    help="% of months invested; the rest in cash (the source of cash drag on total return).",
 )
 st.caption(
-    "Study window is 2022+ (post-COVID, to avoid 2020-21 YoY base-effect noise), so it is all "
-    "bull market and total return trails buy-and-hold on cash drag. The real test is the crash:"
+    "Deployed-capital figures are conditional on the gate being ON — the honest way to judge the "
+    "signal (raw Sharpe vs always-long flatters it, since cash 70% of the time suppresses vol). "
+    "Study window is 2022+ (avoids 2020-21 YoY base-effect noise), so all bull market — the real "
+    "downside test is the crash:"
 )
 
 # --- COVID stress test (full 2019+ history) — the headline proof ---
@@ -239,9 +254,12 @@ if res.stress is not None:
     )
 
 st.caption(
-    f"**Is the timing real?** Clustered by month {pval_label(sig.clustered_p)}; gate-ON vs "
-    f"gate-OFF {pval_label(sig.gate_p)} ({sig.gate_on_mean:+.1f}% vs {sig.gate_off_mean:+.1f}%/mo). "
-    f"Borderline on {sig.n_months} signal-on months — hence 'risk overlay', not an alpha claim."
+    f"**Does the gate actually help?** The test that matters — gate-ON vs gate-OFF months — is "
+    f"{pval_label(sig.gate_p)}: it **does not clear the 5% bar** ({sig.gate_on_mean:+.1f}% vs "
+    f"{sig.gate_off_mean:+.1f}%/mo over {sig.n_months} signal-on months). The flattering "
+    f"per-position p≈{sig.naive_p:.2f} overstates it (positions within a month are correlated). "
+    "Treat the edge as **suggestive, not established** — and several signal/universe configs were "
+    "explored, so borderline p-values deserve extra skepticism (multiple testing)."
 )
 
 st.markdown("**Out-of-sample validation** — signal on names it was never tuned on")
@@ -252,19 +270,21 @@ vf = analysis.pooled_validation(res.universe_prices[fr_cols], res.tsa)
 vr = analysis.pooled_validation(res.universe_prices[reit_cols], res.tsa)
 v1.metric(
     f"Franchisors ({len(fr_cols)})",
-    f"{vf.signal_on_hit:.0%} hit",
-    delta=f"{(vf.signal_on_hit - vf.baseline_hit):+.0%} vs base | r={vf.pooled_r:+.2f}",
+    f"{vf.signal_on_hit:.0%} up",
+    delta=f"{(vf.signal_on_hit - vf.baseline_hit):+.0%} vs base rate",
     help="Asset-light brands incl. MAR/HLT/H/WH/CHH/IHG + timeshares HGV/VAC/TNL.",
 )
 v2.metric(
     f"Hotel REITs ({len(reit_cols)})",
-    f"{vr.signal_on_hit:.0%} hit",
-    delta=f"{(vr.signal_on_hit - vr.baseline_hit):+.0%} vs base | r={vr.pooled_r:+.2f}",
+    f"{vr.signal_on_hit:.0%} up",
+    delta=f"{(vr.signal_on_hit - vr.baseline_hit):+.0%} vs base rate",
     help="Own the real estate: HST/PK/RHP/APLE/DRH/PEB/SHO/XHR/RLJ/INN.",
 )
 st.caption(
-    "The effect holds across **both** business models (franchisors are fee/growth, REITs are "
-    "rate/RevPAR), which argues it's a real sector-demand effect, not overfitting."
+    "**Metric:** hit rate = P(next-month total return > 0 | gate ON), pooled across each bucket's "
+    "name-months, vs the unconditional base rate. The effect points the right way in **both** "
+    "business models (franchisors are fee/growth, REITs rate/RevPAR), but the pooled linear "
+    f"correlation is near-noise (r≈{vf.pooled_r:+.2f}/{vr.pooled_r:+.2f}) — directional, not linear."
 )
 
 with st.expander("📅 When was the gate ON? — signal history & realized returns", expanded=True):

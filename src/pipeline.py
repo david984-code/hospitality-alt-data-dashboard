@@ -135,10 +135,11 @@ def run(force: bool = False, skip_trends: bool = False) -> PipelineResult:
 
 def _nowcast_summary(nowcast) -> dict:
     return {
-        "r_coincident": round(nowcast.r_coincident, 3),
+        "r_levels_yoy": round(nowcast.r_levels, 3),
+        "r_mom_growth": round(nowcast.r_mom_growth, 3),
+        "r_diff_yoy": round(nowcast.r_diff_yoy, 3),
         "best_lag_months": nowcast.best_lag_months,
-        "best_r": round(nowcast.best_r, 3),
-        "note": "TSA YoY vs Accommodation-employment YoY (demand proxy)",
+        "note": "levels-of-YoY co-trend (inflated); r on CHANGES (MoM / diff-YoY) is the honest read",
     }
 
 
@@ -211,10 +212,10 @@ if __name__ == "__main__":
 
     res = run(force=args.force, skip_trends=args.skip_trends)
     n = res.nowcast
-    print("\n=== DEMAND NOWCAST (TSA YoY vs accommodation-employment YoY) ===")
-    print(n.table.round(3).to_string())
+    print("\n=== DEMAND NOWCAST (TSA vs accommodation-employment) ===")
     print(
-        f"Coincident r = {n.r_coincident:.3f} | best lag {n.best_lag_months}m, r = {n.best_r:.3f}"
+        f"r levels-of-YoY = {n.r_levels:.3f} (co-trending, inflated)  |  "
+        f"MoM-growth = {n.r_mom_growth:.3f}  |  diff-YoY = {n.r_diff_yoy:.3f}  (honest)"
     )
 
     bt = res.backtest

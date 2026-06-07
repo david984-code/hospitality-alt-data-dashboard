@@ -39,7 +39,9 @@ def zscore(series: pd.Series, window: int | None = None) -> pd.Series:
 # ----------------------------------------------------------------------------- nowcast
 @dataclass
 class Nowcast:
-    r_coincident: float
+    r_levels: float  # corr of YoY levels — inflated by shared (co-trending) recovery
+    r_mom_growth: float  # corr of month-over-month growth — honest co-movement on CHANGES
+    r_diff_yoy: float  # corr of differenced YoY — strictest change-on-change measure
     best_lag_months: int
     best_r: float
     table: pd.DataFrame
@@ -63,19 +65,30 @@ def _lag_correlation_table(tsa_y: pd.Series, dem_y: pd.Series, max_lag: int) -> 
     return pd.DataFrame(rows).set_index("lag_months")
 
 
+def _robust_corrs(tsa_m, dem_m, tsa_y, dem_y) -> tuple[float, float]:
+    """Co-movement on CHANGES, not co-trending levels: (MoM-growth r, differenced-YoY r)."""
+    g = pd.concat([tsa_m.pct_change().rename("t"), dem_m.pct_change().rename("d")], axis=1).dropna()
+    d = pd.concat([tsa_y.diff().rename("t"), dem_y.diff().rename("d")], axis=1).dropna()
+    return float(g["t"].corr(g["d"])), float(d["t"].corr(d["d"]))
+
+
 def demand_nowcast(tsa_daily: pd.Series, accom_emp: pd.Series, max_lag: int = 6) -> Nowcast:
-    """Cross-correlation of TSA YoY vs accommodation-employment YoY (the demand proxy).
+    """How closely TSA tracks the hotel-demand proxy (accommodation employment).
 
-    Positive lag = TSA leads demand by that many months.
+    Reports correlation three ways: YoY levels (co-trending, inflated), MoM growth, and
+    differenced YoY (the honest change-on-change reads). Positive lag = TSA leads.
     """
-    tsa_y = yoy(_to_period(tsa_daily.resample("ME").mean()), 12).dropna()
-    dem_y = yoy(_to_period(accom_emp.resample("ME").last()), 12).dropna()
-
+    tsa_m = _to_period(tsa_daily.resample("ME").mean())
+    dem_m = _to_period(accom_emp.resample("ME").last())
+    tsa_y, dem_y = yoy(tsa_m, 12).dropna(), yoy(dem_m, 12).dropna()
     table = _lag_correlation_table(tsa_y, dem_y, max_lag)
     r_by_lag = table["r"]
     best = int(r_by_lag.abs().idxmax())
+    r_mom, r_dy = _robust_corrs(tsa_m, dem_m, tsa_y, dem_y)
     return Nowcast(
-        r_coincident=float(r_by_lag.loc[0]),
+        r_levels=float(r_by_lag.loc[0]),
+        r_mom_growth=r_mom,
+        r_diff_yoy=r_dy,
         best_lag_months=best,
         best_r=float(r_by_lag.loc[best]),
         table=table,
@@ -346,6 +359,23 @@ def equity_curves(backtest: Backtest, prices: pd.DataFrame) -> pd.DataFrame:
 class RiskMetrics:
     table: pd.DataFrame  # rows: Signal / Always-long; cols: sharpe, max_dd, in_market, ...
     months: int
+    deployed: dict = field(default_factory=dict)  # return-on-deployed-capital (invested months)
+
+
+def _deployed_stats(strat: pd.Series) -> dict:
+    """Return-on-deployed-capital: stats over only the invested (gate-ON) months."""
+    dep = strat[strat != 0].to_numpy()
+    n = len(dep)
+    if n == 0:
+        keys = ["n_invested", "mean_per_month", "ann_return", "sharpe"]
+        return dict.fromkeys(keys, float("nan")) | {"n_invested": 0}
+    sd = dep.std(ddof=1)
+    return {
+        "n_invested": n,
+        "mean_per_month": float(dep.mean()),
+        "ann_return": float((1 + dep).prod() ** (12 / n) - 1),
+        "sharpe": float(dep.mean() * np.sqrt(12) / sd) if sd > 0 else float("nan"),
+    }
 
 
 def _series_stats(r: pd.Series) -> dict:
@@ -374,7 +404,7 @@ def risk_metrics(backtest: Backtest, prices: pd.DataFrame) -> RiskMetrics:
     table = pd.DataFrame(
         {"Signal (demand-gated)": _series_stats(strat), "Always-long": _series_stats(base)}
     ).T
-    return RiskMetrics(table=table, months=len(strat))
+    return RiskMetrics(table=table, months=len(strat), deployed=_deployed_stats(strat))
 
 
 @dataclass

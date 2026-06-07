@@ -40,7 +40,8 @@ def test_demand_nowcast_perfect_coincidence():
     accom_emp = level.copy()
 
     nc = analysis.demand_nowcast(tsa_daily, accom_emp, max_lag=6)
-    assert nc.r_coincident > 0.99
+    assert nc.r_levels > 0.99
+    assert nc.r_mom_growth > 0.99  # identical series correlate on changes too
     assert nc.best_lag_months == 0
     assert nc.best_r > 0.99
     assert "r" in nc.table.columns
@@ -195,6 +196,9 @@ def test_risk_metrics_table():
     # Always-long is invested every month; the gated overlay is invested no more than that.
     assert sig_inmkt <= rm.table.loc["Always-long", "in_market"]
     assert rm.table.loc["Signal (demand-gated)", "max_drawdown"] <= 0.0
+    # deployed-capital stats are computed over the invested months only
+    assert rm.deployed["n_invested"] >= 1
+    assert {"mean_per_month", "ann_return", "sharpe"} <= set(rm.deployed)
 
 
 def test_stress_test_structure():

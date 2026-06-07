@@ -1,7 +1,7 @@
 # Hospitality Alt-Data Dashboard
 
-> **A real-time nowcast of US lodging demand (r = 0.92) plus a demand-gated risk overlay
-> that cut COVID drawdown ~75% — built entirely from free public alt-data.**
+> **A real-time US lodging-demand nowcast plus a demand-gated risk overlay that cut COVID
+> drawdown ~75% — built entirely from free public alt-data.**
 
 An alternative-data pipeline that aggregates **TSA checkpoint throughput**, **Google
 Trends brand searches**, and **BLS hospitality labor data** to (1) **nowcast US lodging
@@ -13,31 +13,31 @@ dashboard with pre-earnings anomaly alerts.
 
 | Result | Value |
 |---|---|
-| **Primary deliverable** — TSA volume as a demand nowcast (TSA YoY vs Accommodation-employment YoY, coincident) | **r = 0.92** |
-| **Risk overlay** (study window, 2022+) — long top-2 franchisor brands when travel demand is accelerating, else cash | **Sharpe ~1.0 vs 0.73** always-long; **max drawdown −6% vs −23%**; invested only ~30% of months |
-| **COVID stress test** (full history, 2019+) — same overlay through the crash | **max drawdown −11% vs −44%**; Sharpe 0.94 vs 0.66 — the gate went to cash as travel collapsed |
-| Timing significance (clustered by month) | per-position p ≈ 0.005 (naive) → **clustered p ≈ 0.03**; gate-ON vs gate-OFF p ≈ 0.09 |
-| Out-of-sample validation, pooled across a 20-name universe | franchisors 68% vs 58% (r = 0.12); REITs 63% vs 52% (r = 0.16) |
+| **Nowcast** — does TSA track the hotel-demand proxy? (measured on *changes*, not co-trending levels) | MoM-growth **r ≈ 0.55**; differenced-YoY r ≈ 0.25. *(Levels-of-YoY r = 0.92 is inflated by the shared post-COVID recovery trend — reported, not led with.)* |
+| **Risk overlay**, return on **deployed** capital (study window 2022+) | when invested (~30% of months): **~45% annualized, deployed Sharpe ~2.0**, mean ≈ +3.3%/invested-month |
+| **COVID stress test** (full 2019+ history) — the downturn evidence | **max drawdown −11% vs −44%** for always-long; the gate went to cash as travel collapsed |
+| Does the gate help? (the test that matters) | gate-ON vs gate-OFF **p ≈ 0.09 — does not clear 5%**. (Per-position p ≈ 0.03 overstates it: positions within a month are correlated.) |
+| Out-of-sample, pooled 20-name universe | hit rate = P(next-month up \| gate ON): franchisors ~68% vs ~58% base; REITs ~63% vs ~52%. Pooled linear r ≈ 0.12 (near-noise) — directional, not linear. |
 
 > Numbers are a nowcast and move with each data refresh; the figures above are the
 > reproducible output of `uv run python -m src.pipeline` on the date noted.
 
-**The honest takeaway:** the headline deliverable is the **r = 0.92 demand nowcast** — TSA
-is a clean, timely (1–2 day lag) read on lodging demand. The trading angle is framed as a
-**risk overlay, not alpha**: gating exposure on travel-demand *acceleration* delivered a
-better Sharpe (~1.0 vs 0.73) and a fraction of the drawdown while invested only ~30% of the
-time. The **COVID stress test** extends the overlay to 2019 (the limit of public TSA data)
-and is the key downturn evidence: through the crash it held max drawdown to **−11% vs −44%**
-for buy-and-hold. **Caveats kept loud:** COVID is a single event, 2020-21 YoY math is noisy
-(why the headline study window starts in 2022), the timing edge is only borderline-significant
-on ~16 months, and on total return the overlay trails buy-and-hold from cash drag. The
-dashboard reports all of this rather than cherry-picking the flattering numbers.
+**The honest takeaway:** TSA is a clean, *timely* (1–2 day lag) read on lodging demand — but
+the headline value is **timeliness, not fit**: on changes the co-movement is a moderate
+~0.55, and the often-quoted 0.92 is inflated by two series co-trending out of COVID. The
+trading angle is framed as a **risk overlay, not alpha**: judged on deployed capital it is
+strong (~45% annualized / Sharpe ~2.0 *when invested*), and the **COVID stress test** is the
+real proof — through the crash it held drawdown to **−11% vs −44%** by sitting in cash.
+**Caveats kept loud:** the gate-help test is *not* significant (p ≈ 0.09); COVID is a single
+event; several signal/universe configs were explored (multiple testing), so borderline
+p-values deserve skepticism; and on *total* return the overlay trails buy-and-hold from cash
+drag. The dashboard reports all of this rather than cherry-picking the flattering numbers.
 
 ## Data sources
 
 | Signal | Source | Notes |
 |---|---|---|
-| TSA passenger throughput (daily) | TSA.gov passenger-volumes pages | Per-year archive URLs stitched into a 2022-present daily series. |
+| TSA passenger throughput (daily) | TSA.gov passenger-volumes pages | Per-year archive URLs (public from 2019) stitched into a daily series; headline study window 2022+, full 2019+ used for the COVID stress test. |
 | Brand search interest (weekly) | Google Trends via `pytrends` | Marriott / Hilton / Hyatt / Wyndham / Choice / IHG, US, relative interest. |
 | Job openings, Leisure & Hospitality (monthly) | BLS public API (JOLTS) | The **"Indeed job postings" analog** — Indeed killed its public API and blocks scraping, so this is the keyless, reproducible hiring-demand proxy. |
 | PPI, Traveler Accommodation (monthly) | BLS public API | **RevPAR-rate / ADR proxy.** |
@@ -46,12 +46,21 @@ dashboard reports all of this rather than cherry-picking the flattering numbers.
 
 ### Honest caveats
 - **True RevPAR is STR data (paid).** This project uses BLS Accommodation employment as
-  a hospitality-demand proxy and PPI Traveler Accommodation as a room-rate proxy. The
-  lead-lag headline is the TSA-vs-demand-proxy relationship, clearly labeled as such.
-- **Small sample / correlated cross-section.** Three names over ~4.5 post-COVID years is
-  low statistical power; observations within a month are correlated, so effective sample
-  size is closer to the number of distinct signal-on months (16). The pooled 10-name test
-  is the guard against reading too much into the 3-name result.
+  a hospitality-demand proxy and PPI Traveler Accommodation as a room-rate proxy. It is a
+  RevPAR-*proxy* nowcast, not RevPAR.
+- **Correlation is reported on changes.** The 0.92 levels-of-YoY figure is inflated because
+  TSA and employment both co-trend out of the 2020 hole. The honest co-movement is on
+  changes: MoM-growth r ≈ 0.55, differenced-YoY r ≈ 0.25.
+- **Signal → execution rule (no look-ahead).** The gate uses month-*t* TSA (published within
+  ~1–2 days of month-end) to set exposure for month *t+1*; backtest returns are strictly
+  next-month. Employment/PPI are descriptive only and never enter the trade rule.
+- **Deployed-capital framing.** Risk-adjusted stats are reported *conditional on being
+  invested* (~30% of months); raw Sharpe vs always-long flatters the overlay because sitting
+  in cash suppresses volatility. On *total* return the overlay trails buy-and-hold (cash drag).
+- **Small sample / correlated cross-section / multiple testing.** ~16 signal-on months; the 2
+  names held in a month move together, so effective N ≈ months, not positions. The gate-help
+  test is *not* significant (p ≈ 0.09). Several signal/universe configurations were explored,
+  so borderline p-values should be read with multiple-testing skepticism.
 - This is a **research / monitoring tool, not investment advice.**
 
 ## Layout
