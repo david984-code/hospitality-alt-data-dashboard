@@ -1,9 +1,10 @@
 """Hospitality Alt-Data Dashboard.
 
-TSA throughput + Google Trends brand search + BLS hospitality labor -> daily
-demand signals and a pre-earnings monitoring tool for MAR / HLT / H.
+A real-time nowcast of US lodging demand built from public alternative data
+(TSA throughput + Google Trends brand search + BLS hospitality labor), with an
+exploratory pre-earnings timing signal for MAR / HLT / H.
 
-Run:  streamlit run app.py
+Run:  uv run streamlit run app.py
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import config
-from src import pipeline
+from src import analysis, pipeline
 
 st.set_page_config(page_title="Hospitality Alt-Data Dashboard", layout="wide", page_icon=None)
 
@@ -21,6 +22,13 @@ st.set_page_config(page_title="Hospitality Alt-Data Dashboard", layout="wide", p
 @st.cache_data(ttl=3600, show_spinner="Fetching alt-data and computing signals...")
 def load(force: bool = False) -> pipeline.PipelineResult:
     return pipeline.run(force=force)
+
+
+def pval_label(p: float, alpha: float = 0.05) -> str:
+    if p != p:  # NaN
+        return "n/a"
+    verdict = "significant" if p < alpha else "not significant"
+    return f"p = {p:.3f} ({verdict})"
 
 
 # ----------------------------------------------------------------------------- sidebar
@@ -32,57 +40,36 @@ if st.sidebar.button("Refresh data now"):
 res = load()
 st.sidebar.metric("TSA data through", res.tsa.index.max().strftime("%Y-%m-%d"))
 st.sidebar.metric("Names tracked", ", ".join(config.TICKERS))
-st.sidebar.caption(f"Validation universe: {len(config.UNIVERSE)} lodging names")
 st.sidebar.caption(
-    "Proxies: BLS Accommodation employment = demand; BLS Job Openings (L&H) = the "
-    "Indeed-postings analog; PPI Traveler Accommodation = RevPAR-rate. True RevPAR (STR) is paid."
+    f"Validation universe: {len(config.FRANCHISORS)} franchisors + {len(config.REITS)} REITs"
 )
+with st.sidebar.expander("Methodology & data proxies"):
+    st.markdown(
+        "True RevPAR (revenue per available room) is paid **STR** data. This project "
+        "reconstructs its *shape* from free public proxies:\n\n"
+        "- **TSA throughput** → travel demand (daily, ~1–2 day lag)\n"
+        "- **BLS Accommodation employment** → occupancy / demand (hotels staff to "
+        "expected occupancy)\n"
+        "- **BLS Job Openings, L&H** → forward hiring intent (the 'Indeed postings' "
+        "analog; Indeed killed its public API)\n"
+        "- **PPI Traveler Accommodation** → room-rate / ADR\n"
+        "- **Google Trends** → per-brand booking intent\n\n"
+        "Identity: **RevPAR = ADR × Occupancy**. This is a defensible RevPAR-*proxy* "
+        "nowcast, not the paid number."
+    )
 
 # ----------------------------------------------------------------------------- header
 st.title("Hospitality Alt-Data Dashboard")
 st.markdown(
-    "Forecasting lodging demand for **Marriott (MAR)**, **Hilton (HLT)**, **Hyatt (H)** "
-    "from alternative data, ahead of quarterly earnings."
+    "A real-time **nowcast of US lodging demand** from public alternative data, with an "
+    "exploratory pre-earnings timing signal for **Marriott (MAR)**, **Hilton (HLT)**, "
+    "**Hyatt (H)**."
 )
 
-# ----------------------------------------------------------------------------- today's signal
-m = res.signals.monthly
-latest = m.iloc[-1]
-gate_on = latest["gate"] > 0
-brand_cols = [f"brand_{t}" for t in config.TICKERS if f"brand_{t}" in m.columns]
-scores = latest[brand_cols].dropna()
-scores.index = [c.replace("brand_", "") for c in scores.index]
-top2 = list(scores.sort_values(ascending=False).head(2).index) if len(scores) >= 2 else []
-
-st.subheader("Today's signal")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("TSA traveler volume YoY", f"{latest['tsa_yoy']:+.1f}%")
-c2.metric(
-    "TSA acceleration (MoM Δ of YoY)",
-    f"{latest['tsa_accel']:+.2f}",
-    help="The tradeable gate: positive = travel-demand growth is accelerating.",
-)
-c3.metric("Signal gate", "ON — risk-on" if gate_on else "OFF — stand aside")
-c4.metric(
-    "Long top-2 picks",
-    ", ".join(top2) if gate_on and top2 else "—",
-    help="When the gate is ON, go long the 2 names with the strongest brand-search momentum.",
-)
-
-if gate_on and top2:
-    st.success(
-        f"Gate ON: TSA demand is accelerating. Strategy is long **{top2[0]}** and **{top2[1]}** "
-        "(top-2 by Google-Trends brand momentum), 1-month hold."
-    )
-else:
-    st.info("Gate OFF: TSA demand growth is not accelerating. Strategy stands aside.")
-
-st.divider()
-
-# ----------------------------------------------------------------------------- nowcast
+# ----------------------------------------------------------------------------- 1. NOWCAST (lead)
+st.header("1 · Travel demand nowcast")
 left, right = st.columns([3, 2])
 with left:
-    st.subheader("TSA as a hospitality demand nowcast")
     nc = res.nowcast
     tsa_y = nc.tsa_yoy.copy()
     tsa_y.index = pd.PeriodIndex(nc.tsa_yoy.index).to_timestamp()
@@ -108,24 +95,63 @@ with left:
     )
     st.plotly_chart(fig, width="stretch")
 with right:
-    st.subheader("Lead-lag")
     st.metric(
         "Coincident correlation r",
-        f"{res.nowcast.r_coincident:.2f}",
-        help="TSA YoY vs Accommodation-employment YoY (demand proxy).",
+        f"{nc.r_coincident:.2f}",
+        help="TSA YoY vs BLS Accommodation-employment YoY (demand proxy).",
     )
     st.caption(
         f"TSA traveler volume tracks hospitality demand almost one-for-one "
-        f"(r = {res.nowcast.r_coincident:.2f}, contemporaneous). It is a strong real-time "
-        "*nowcast* of sector demand. The cross-correlation by lag:"
+        f"(r = {nc.r_coincident:.2f}, contemporaneous; best lag = {nc.best_lag_months}m). "
+        "It doesn't *lead* the fundamentals — its value is **timeliness**: TSA prints in "
+        "1–2 days, vs weeks for BLS and a quarter for company earnings. Lag table:"
     )
-    st.dataframe(res.nowcast.table.round(3), width="stretch")
+    st.dataframe(nc.table.round(3), width="stretch")
 
 st.divider()
 
-# ----------------------------------------------------------------------------- strategy
-st.subheader("Strategy backtest — long top-2 on a positive signal")
+# ----------------------------------------------------------------------------- 2. TODAY'S SIGNAL
+m = res.signals.monthly
+latest = m.iloc[-1]
+gate_on = latest["gate"] > 0
+brand_cols = [f"brand_{t}" for t in config.TICKERS if f"brand_{t}" in m.columns]
+scores = latest[brand_cols].dropna()
+scores.index = [c.replace("brand_", "") for c in scores.index]
+top2 = list(scores.sort_values(ascending=False).head(2).index) if len(scores) >= 2 else []
+
+st.header("2 · Today's signal")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("TSA traveler volume YoY", f"{latest['tsa_yoy']:+.1f}%")
+c2.metric(
+    "TSA acceleration (MoM Δ of YoY)",
+    f"{latest['tsa_accel']:+.2f}",
+    help="The tradeable gate: positive = travel-demand growth is accelerating.",
+)
+c3.metric("Signal gate", "ON — risk-on" if gate_on else "OFF — stand aside")
+c4.metric(
+    "Long top-2 picks",
+    ", ".join(top2) if gate_on and top2 else "—",
+    help="When the gate is ON, go long the 2 names with the strongest brand-search momentum.",
+)
+if gate_on and top2:
+    st.success(
+        f"Gate ON: TSA demand is accelerating. Exploratory signal is long **{top2[0]}** and "
+        f"**{top2[1]}** (top-2 by Google-Trends brand momentum), 1-month hold."
+    )
+else:
+    st.info("Gate OFF: TSA demand growth is not accelerating. Signal stands aside (holds cash).")
+
+st.divider()
+
+# ----------------------------------------------------------------------------- 3. STRATEGY (exploratory)
 bt = res.backtest
+sig = res.significance
+st.header("3 · Exploratory timing signal")
+st.caption(
+    "⚠️ Small sample — treat as a research hypothesis, not a track record. "
+    f"Only {sig.n_months} months had the gate ON over a {len(m)}-month window."
+)
+
 k1, k2, k3, k4 = st.columns(4)
 k1.metric(
     "Hit rate", f"{bt.hit_rate:.0%}", delta=f"{(bt.hit_rate - bt.baseline_hit):+.0%} vs baseline"
@@ -135,49 +161,135 @@ k2.metric(
     f"{bt.mean_return:+.1f}%",
     delta=f"{(bt.mean_return - bt.baseline_mean):+.1f}% vs baseline",
 )
-k3.metric("Positions", f"{bt.n_trades}", help=f"across {bt.n_rebalances} monthly rebalances")
+k3.metric("Signal-on months", f"{sig.n_months}", help=f"{bt.n_trades} positions (2 per month)")
 k4.metric("Baseline (always-long)", f"{bt.baseline_hit:.0%}  /  {bt.baseline_mean:+.1f}%")
 
-sc1, sc2 = st.columns([2, 3])
-with sc1:
-    if not bt.equity_curve.empty:
+st.markdown("**Statistical significance** (does the edge survive honest testing?)")
+s1, s2, s3 = st.columns(3)
+s1.metric(
+    "Per-position test",
+    pval_label(sig.naive_p),
+    help="Naive — treats 32 positions as independent. Overstated.",
+)
+s2.metric(
+    "Clustered by month",
+    pval_label(sig.clustered_p),
+    help="1 observation per signal-on month — the honest test.",
+)
+s3.metric(
+    "Gate ON vs OFF",
+    pval_label(sig.gate_p),
+    delta=f"{sig.gate_on_mean:+.1f}% vs {sig.gate_off_mean:+.1f}%/mo",
+)
+st.caption(
+    "The naive per-position p-value looks strong, but the 2 names held in a given month move "
+    "together, so the effective sample is ~the number of signal-on months, not the position "
+    "count. Clustered by month, the edge is **borderline** and does not clear the bar versus "
+    "simply owning hotels in this post-COVID bull market."
+)
+
+ec1, ec2 = st.columns([3, 2])
+with ec1:
+    eq = res.equity
+    if not eq.empty:
         eqfig = go.Figure()
+        eqfig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="Signal (cash when OFF)"))
         eqfig.add_trace(
             go.Scatter(
-                x=bt.equity_curve.index, y=bt.equity_curve.values, name="Strategy", fill="tozeroy"
+                x=eq.index, y=eq["baseline"], name="Always-long MAR/HLT/H", line=dict(dash="dot")
             )
         )
         eqfig.update_layout(
             height=300,
             margin=dict(l=10, r=10, t=30, b=10),
-            title="Cumulative growth of $1 (per-position, compounded)",
-            xaxis_title="position #",
+            title="Cumulative growth of $1 (calendar time)",
+            legend=dict(orientation="h", y=1.15),
         )
         st.plotly_chart(eqfig, width="stretch")
-with sc2:
-    st.markdown("**Out-of-sample validation** (pooled across the 10-name lodging universe)")
-    v = res.validation
-    v1, v2, v3 = st.columns(3)
-    v1.metric("Pooled signal r", f"{v.pooled_r:+.2f}")
-    v2.metric(
-        "Signal-on hit rate",
-        f"{v.signal_on_hit:.0%}",
-        delta=f"{(v.signal_on_hit - v.baseline_hit):+.0%}",
-    )
-    v3.metric("Observations", f"{v.n_obs}")
+with ec2:
+    st.markdown("**Honest read of the curve**")
     st.caption(
-        "The 3-name edge holds across a broader lodging universe (IHG, WH, CHH, and hotel "
-        "REITs HST/PK/RHP/APLE), which argues it is not overfit to MAR/HLT/H. "
-        "Caveat: cross-sectional observations within a month are correlated, so effective "
-        "sample size is closer to the number of distinct signal-on months."
+        "The signal sits in cash ~60% of the time, so in a one-way bull market it **trails** "
+        "buy-and-hold on total return — cash drag. Its value is *per-invested-month quality* "
+        "(higher hit rate and mean return when it does hold), i.e. a risk-reduction overlay, "
+        "not a return maximizer. Showing this is the point: the data doesn't support an "
+        "alpha claim, and the dashboard says so."
     )
+
+st.markdown("**Out-of-sample validation by business model**")
+v1, v2 = st.columns(2)
+fr_cols = [t for t in config.FRANCHISORS if t in res.universe_prices.columns]
+reit_cols = [t for t in config.REITS if t in res.universe_prices.columns]
+vf = analysis.pooled_validation(res.universe_prices[fr_cols], res.tsa)
+vr = analysis.pooled_validation(res.universe_prices[reit_cols], res.tsa)
+v1.metric(
+    f"Franchisors ({len(fr_cols)})",
+    f"{vf.signal_on_hit:.0%} hit",
+    delta=f"{(vf.signal_on_hit - vf.baseline_hit):+.0%} vs base | r={vf.pooled_r:+.2f}",
+    help="Asset-light brands: MAR/HLT/H/WH/CHH/IHG + timeshares HGV/VAC/TNL.",
+)
+v2.metric(
+    f"Hotel REITs ({len(reit_cols)})",
+    f"{vr.signal_on_hit:.0%} hit",
+    delta=f"{(vr.signal_on_hit - vr.baseline_hit):+.0%} vs base | r={vr.pooled_r:+.2f}",
+    help="Own the real estate: HST/PK/RHP/APLE/DRH/PEB/SHO/XHR/RLJ/INN.",
+)
+st.caption(
+    "The TSA-acceleration → next-month-return effect shows up in **both** business models "
+    "(franchisors and REITs), on names the signal was never tuned on — which argues it's a "
+    "real sector-demand effect, not overfitting to the three headline tickers. Splitting the "
+    "two buckets matters because franchisors are fee/growth stories while REITs are "
+    "rate/RevPAR stories."
+)
 
 with st.expander("Show all backtest positions"):
     st.dataframe(bt.trades, width="stretch", hide_index=True)
 
 st.divider()
 
-# ----------------------------------------------------------------------------- alerts
+# ----------------------------------------------------------------------------- 4. EARNINGS SEARCH
+st.header("4 · Do pre-earnings searches predict the print?")
+study = res.earnings_study
+if study.n < 3:
+    st.info("Not enough earnings events with overlapping search history yet.")
+else:
+    e1, e2 = st.columns([3, 2])
+    with e1:
+        ev = study.events
+        scat = go.Figure()
+        scat.add_trace(
+            go.Scatter(
+                x=ev["pre_search_z"],
+                y=ev["reaction_pct"],
+                mode="markers",
+                text=ev["ticker"] + " " + ev["earnings"].astype(str),
+                marker=dict(size=9),
+            )
+        )
+        scat.update_layout(
+            height=320,
+            margin=dict(l=10, r=10, t=30, b=10),
+            title="Pre-earnings brand-search z vs price reaction",
+            xaxis_title="Pre-earnings search z-score (4wk vs trailing year)",
+            yaxis_title=f"Reaction % (close before → {3}d after)",
+        )
+        scat.add_hline(y=0, line_dash="dot", line_color="gray")
+        scat.add_vline(x=0, line_dash="dot", line_color="gray")
+        st.plotly_chart(scat, width="stretch")
+    with e2:
+        st.metric("Correlation", f"{study.corr:+.2f}", help="search z vs earnings reaction")
+        st.metric("Up-reaction | high search", f"{study.high_search_hit:.0%}")
+        st.metric("Events", f"{study.n}")
+        st.caption(
+            "Tests the premise behind the anomaly alerts: does a brand-search spike before a "
+            f"print foreshadow the reaction? Across {study.n} events the relationship is "
+            "weak — honestly, search intensity is not (yet) a reliable earnings predictor "
+            "on this sample. Reported rather than hidden."
+        )
+
+st.divider()
+
+# ----------------------------------------------------------------------------- 5. ALERTS
 a1, a2 = st.columns(2)
 with a1:
     st.subheader("Pre-earnings anomaly alerts")
@@ -206,5 +318,5 @@ st.divider()
 st.caption(
     f"Generated {pd.Timestamp.now():%Y-%m-%d %H:%M}. Data: TSA.gov (passenger volumes), "
     "Google Trends (pytrends), BLS public API (JOLTS / CES / PPI), Yahoo Finance. "
-    "Research tool only — not investment advice."
+    "Research / monitoring tool only — not investment advice."
 )
