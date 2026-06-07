@@ -42,6 +42,7 @@ def test_demand_nowcast_perfect_coincidence():
     nc = analysis.demand_nowcast(tsa_daily, accom_emp, max_lag=6)
     assert nc.r_levels > 0.99
     assert nc.r_mom_growth > 0.99  # identical series correlate on changes too
+    assert nc.r_mom_n > 0 and nc.r_mom_p < 0.05  # n and significance reported
     assert nc.best_lag_months == 0
     assert nc.best_r > 0.99
     assert "r" in nc.table.columns
@@ -198,7 +199,11 @@ def test_risk_metrics_table():
     assert rm.table.loc["Signal (demand-gated)", "max_drawdown"] <= 0.0
     # deployed-capital stats are computed over the invested months only
     assert rm.deployed["n_invested"] >= 1
-    assert {"mean_per_month", "ann_return", "sharpe"} <= set(rm.deployed)
+    assert {"mean_per_month", "ann_rate_deployed", "sharpe", "sharpe_lo", "sharpe_hi"} <= set(
+        rm.deployed
+    )
+    # the Sharpe point estimate sits inside its own CI
+    assert rm.deployed["sharpe_lo"] <= rm.deployed["sharpe"] <= rm.deployed["sharpe_hi"]
 
 
 def test_stress_test_structure():

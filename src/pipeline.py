@@ -137,6 +137,8 @@ def _nowcast_summary(nowcast) -> dict:
     return {
         "r_levels_yoy": round(nowcast.r_levels, 3),
         "r_mom_growth": round(nowcast.r_mom_growth, 3),
+        "r_mom_p": round(nowcast.r_mom_p, 4),
+        "r_mom_n": nowcast.r_mom_n,
         "r_diff_yoy": round(nowcast.r_diff_yoy, 3),
         "best_lag_months": nowcast.best_lag_months,
         "note": "levels-of-YoY co-trend (inflated); r on CHANGES (MoM / diff-YoY) is the honest read",
@@ -185,6 +187,9 @@ def _build_summary(nowcast, bt, validation, sig, risk) -> dict:
         "strategy": _strategy_summary(bt),
         "significance": _significance_summary(sig),
         "risk_overlay": risk.table.round(3).to_dict(orient="index"),
+        "deployed_capital": {
+            k: round(v, 4) if isinstance(v, float) else v for k, v in risk.deployed.items()
+        },
         "pooled_validation": _validation_summary(validation),
         "generated": pd.Timestamp.now().isoformat(timespec="seconds"),
     }

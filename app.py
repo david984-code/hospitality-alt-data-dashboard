@@ -107,9 +107,12 @@ with left:
     )
     st.plotly_chart(fig, width="stretch")
 with right:
+    p_txt = "p < 0.001" if nc.r_mom_p < 0.001 else f"p = {nc.r_mom_p:.3f}"
     st.metric(
         "TSA–demand co-movement (MoM growth)",
         f"r = {nc.r_mom_growth:.2f}",
+        delta=f"n = {nc.r_mom_n}, {p_txt}",
+        delta_color="off",
         help="Correlation of month-over-month growth — the honest co-movement, on CHANGES.",
     )
     cc_a, cc_b = st.columns(2)
@@ -122,11 +125,11 @@ with right:
         "Differenced YoY", f"r = {nc.r_diff_yoy:.2f}", help="Strictest change-on-change measure."
     )
     st.caption(
-        f"TSA and hotel demand genuinely co-move, but **honestly measure it on changes**: "
-        f"MoM-growth r = {nc.r_mom_growth:.2f}. The 'r = {nc.r_levels:.2f}' often quoted for these "
-        "series is **inflated by co-trending** (both climb out of the 2020 hole together). TSA's "
-        "real value is **timeliness** — it prints in 1–2 days vs weeks for BLS and a quarter for "
-        "earnings — not a near-perfect fit."
+        f"TSA and hotel demand genuinely co-move, measured **on changes**: MoM-growth "
+        f"r = {nc.r_mom_growth:.2f} (n = {nc.r_mom_n}, {p_txt} — significant). The "
+        f"'r = {nc.r_levels:.2f}' often quoted is **inflated by co-trending** (both climb out of "
+        "the 2020 hole together). TSA's real value is **timeliness** — it prints in 1–2 days vs "
+        "weeks for BLS and a quarter for earnings — not a near-perfect fit."
     )
     with st.expander("Lead-lag table"):
         st.dataframe(nc.table.round(3), width="stretch")
@@ -184,18 +187,18 @@ st.markdown(
 
 r1, r2, r3, r4 = st.columns(4)
 r1.metric(
-    "Return on deployed capital",
-    f"{dep['ann_return']:.0%}",
+    "Return / invested month",
+    f"{dep['mean_per_month']:+.1%}",
     help=(
-        f"Annualized over ONLY the {dep['n_invested']} invested months "
-        f"(~{s_row['in_market']:.0%} of the time; mean {dep['mean_per_month']:+.1%}/mo). "
-        "Conditional on being invested — not a whole-portfolio return, and small-sample."
+        f"Mean over the {dep['n_invested']} gate-ON months only. Annualized per-invested-month "
+        f"rate ≈ {dep['ann_rate_deployed']:.0%}, but that is NOT realized (deployed only "
+        f"~{s_row['in_market']:.0%} of the time)."
     ),
 )
 r2.metric(
     "Deployed Sharpe",
-    f"{dep['sharpe']:.2f}",
-    help="Sharpe over invested months only — the honest 'is the capital working' read.",
+    f"{dep['sharpe']:.1f}",
+    help="Annualized, over invested months only. Small n → wide CI (shown below).",
 )
 r3.metric(
     "Max drawdown",
@@ -209,9 +212,11 @@ r4.metric(
     help="% of months invested; the rest in cash (the source of cash drag on total return).",
 )
 st.caption(
-    "Deployed-capital figures are conditional on the gate being ON — the honest way to judge the "
-    "signal (raw Sharpe vs always-long flatters it, since cash 70% of the time suppresses vol). "
-    "Study window is 2022+ (avoids 2020-21 YoY base-effect noise), so all bull market — the real "
+    f"Deployed-capital stats are conditional on the gate being ON ({dep['n_invested']} months) and "
+    f"**small-sample**: the Sharpe's 95% CI is wide — **[{dep['sharpe_lo']:.1f}, {dep['sharpe_hi']:.1f}]** "
+    "— so read it as indicative, not precise. The annualized rate is per-invested-month, **not "
+    f"realized**: realized total-capital return ≈ {s_row['ann_return']:.0%}/yr, *below* always-long's "
+    f"{b_row['ann_return']:.0%} (cash drag). Study window 2022+ is all bull market — the real "
     "downside test is the crash:"
 )
 
@@ -248,9 +253,11 @@ if res.stress is not None:
         st.plotly_chart(sfig, width="stretch")
     st.caption(
         f"Through the COVID crash the demand gate cut the worst drawdown from "
-        f"{sb['max_drawdown']:.0%} to {ss['max_drawdown']:.0%} by going to cash as travel "
-        "collapsed — the downturn evidence the 2022+ window can't give. Caveat: COVID is one "
-        "event and 2020-21 YoY math is noisy from base effects."
+        f"{sb['max_drawdown']:.0%} to {ss['max_drawdown']:.0%}. **No look-ahead:** the gate was "
+        "already OFF for March/April-2020 exposure off *February's* TSA reading (YoY had "
+        "decelerated, accel ≈ −3.1), so it sat out the −34% crash on month-*t* data only and "
+        "re-entered in May. The overlay's worst drawdown is actually Aug-2022, not COVID. Caveat: "
+        "COVID is a single event and 2020-21 YoY math is noisy."
     )
 
 st.caption(

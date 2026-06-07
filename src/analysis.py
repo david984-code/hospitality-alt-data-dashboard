@@ -41,6 +41,8 @@ def zscore(series: pd.Series, window: int | None = None) -> pd.Series:
 class Nowcast:
     r_levels: float  # corr of YoY levels — inflated by shared (co-trending) recovery
     r_mom_growth: float  # corr of month-over-month growth — honest co-movement on CHANGES
+    r_mom_p: float  # p-value of the MoM-growth correlation
+    r_mom_n: int  # sample size for the MoM-growth correlation
     r_diff_yoy: float  # corr of differenced YoY — strictest change-on-change measure
     best_lag_months: int
     best_r: float
@@ -65,11 +67,15 @@ def _lag_correlation_table(tsa_y: pd.Series, dem_y: pd.Series, max_lag: int) -> 
     return pd.DataFrame(rows).set_index("lag_months")
 
 
-def _robust_corrs(tsa_m, dem_m, tsa_y, dem_y) -> tuple[float, float]:
-    """Co-movement on CHANGES, not co-trending levels: (MoM-growth r, differenced-YoY r)."""
+def _robust_corrs(tsa_m, dem_m, tsa_y, dem_y) -> tuple[float, float, int, float]:
+    """Co-movement on CHANGES, not co-trending levels.
+
+    Returns (MoM-growth r, MoM-growth p, MoM n, differenced-YoY r).
+    """
     g = pd.concat([tsa_m.pct_change().rename("t"), dem_m.pct_change().rename("d")], axis=1).dropna()
     d = pd.concat([tsa_y.diff().rename("t"), dem_y.diff().rename("d")], axis=1).dropna()
-    return float(g["t"].corr(g["d"])), float(d["t"].corr(d["d"]))
+    r_mom, p_mom = stats.pearsonr(g["t"], g["d"])
+    return float(r_mom), float(p_mom), int(len(g)), float(d["t"].corr(d["d"]))
 
 
 def demand_nowcast(tsa_daily: pd.Series, accom_emp: pd.Series, max_lag: int = 6) -> Nowcast:
@@ -84,10 +90,12 @@ def demand_nowcast(tsa_daily: pd.Series, accom_emp: pd.Series, max_lag: int = 6)
     table = _lag_correlation_table(tsa_y, dem_y, max_lag)
     r_by_lag = table["r"]
     best = int(r_by_lag.abs().idxmax())
-    r_mom, r_dy = _robust_corrs(tsa_m, dem_m, tsa_y, dem_y)
+    r_mom, p_mom, n_mom, r_dy = _robust_corrs(tsa_m, dem_m, tsa_y, dem_y)
     return Nowcast(
         r_levels=float(r_by_lag.loc[0]),
         r_mom_growth=r_mom,
+        r_mom_p=p_mom,
+        r_mom_n=n_mom,
         r_diff_yoy=r_dy,
         best_lag_months=best,
         best_r=float(r_by_lag.loc[best]),
@@ -363,18 +371,28 @@ class RiskMetrics:
 
 
 def _deployed_stats(strat: pd.Series) -> dict:
-    """Return-on-deployed-capital: stats over only the invested (gate-ON) months."""
+    """Return-on-deployed-capital: stats over only the invested (gate-ON) months.
+
+    Sharpe carries a 95% CI (Lo 2002 i.i.d. SE) — small n makes the point estimate fragile.
+    `ann_rate_deployed` is the per-invested-month rate annualized; it is NOT a realized
+    annual return (capital is deployed only ~30% of the time).
+    """
     dep = strat[strat != 0].to_numpy()
     n = len(dep)
-    if n == 0:
-        keys = ["n_invested", "mean_per_month", "ann_return", "sharpe"]
-        return dict.fromkeys(keys, float("nan")) | {"n_invested": 0}
+    if n < 2:
+        keys = ["mean_per_month", "ann_rate_deployed", "sharpe", "sharpe_lo", "sharpe_hi"]
+        return dict.fromkeys(keys, float("nan")) | {"n_invested": n}
     sd = dep.std(ddof=1)
+    sr_m = dep.mean() / sd if sd > 0 else float("nan")
+    sr_a = sr_m * np.sqrt(12)
+    se_a = np.sqrt((1 + 0.5 * sr_m**2) / n) * np.sqrt(12)  # SE of annualized Sharpe
     return {
         "n_invested": n,
         "mean_per_month": float(dep.mean()),
-        "ann_return": float((1 + dep).prod() ** (12 / n) - 1),
-        "sharpe": float(dep.mean() * np.sqrt(12) / sd) if sd > 0 else float("nan"),
+        "ann_rate_deployed": float((1 + dep.mean()) ** 12 - 1),
+        "sharpe": float(sr_a),
+        "sharpe_lo": float(sr_a - 1.96 * se_a),
+        "sharpe_hi": float(sr_a + 1.96 * se_a),
     }
 
 
