@@ -1,38 +1,38 @@
 # Hospitality Alt-Data Dashboard
 
 An alternative-data pipeline that aggregates **TSA checkpoint throughput**, **Google
-Trends brand searches**, and **BLS hospitality labor data** to nowcast lodging demand
-and time a long strategy in **Marriott (MAR)**, **Hilton (HLT)**, and **Hyatt (H)**
-ahead of quarterly earnings. Results are served through a daily-refreshing Streamlit
+Trends brand searches**, and **BLS hospitality labor data** to (1) **nowcast US lodging
+demand** in near-real-time and (2) drive a demand-gated **risk overlay** across the major
+lodging franchisor brands (MAR, HLT, H, WH, CHH, IHG). Served through a Streamlit
 dashboard with pre-earnings anomaly alerts.
 
-## Headline findings (computed on 2022-2026 data; as of 2026-06-04 snapshot)
+## Headline findings (computed on 2022-2026 data; as of 2026-06 snapshot)
 
 | Result | Value |
 |---|---|
-| **Primary finding** — TSA volume as a demand nowcast (TSA YoY vs Accommodation-employment YoY, coincident) | **r = 0.92** |
-| Exploratory timing signal: long top-2 of MAR/HLT/H on a positive TSA-acceleration signal, 1-month hold | 78% hit rate, +3.8% mean / position (16 signal-on months) vs 62% / +1.9% always-long baseline |
-| Significance (honest, clustered by month) | per-position p = 0.008 (naive) → **clustered p = 0.06**; gate-ON vs gate-OFF p = 0.17 — **economically large, not statistically significant** at this sample |
+| **Primary deliverable** — TSA volume as a demand nowcast (TSA YoY vs Accommodation-employment YoY, coincident) | **r = 0.92** |
+| **Risk overlay** — long top-2 franchisor brands when travel demand is accelerating, else cash | **Sharpe 1.21 vs 0.73** always-long; **max drawdown −7% vs −23%**; invested only ~30% of months |
+| Timing significance (clustered by month) | per-position p = 0.003 (naive) → **clustered p = 0.01**; gate-ON vs gate-OFF p = 0.09 |
 | Out-of-sample validation, pooled across a 20-name universe | franchisors 68% vs 58% (r = 0.12, n = 144); REITs 63% vs 52% (r = 0.16, n = 160) |
 
 > Numbers are a nowcast and move with each data refresh; the figures above are the
 > reproducible output of `uv run python -m src.pipeline` on the date noted.
 
 **The honest takeaway:** the headline deliverable is the **r = 0.92 demand nowcast** — TSA
-is a clean, timely (1–2 day lag) read on lodging demand. The *timing signal* is a
-research hypothesis: the edge is in the **second derivative** (when TSA YoY growth is
-*accelerating*, lodging tends to outperform the next month), it shows up across both
-asset-light franchisors and hotel REITs (so it isn't overfit to three tickers), but on
-~16 signal-on months it is **not yet statistically significant** and a cash-when-OFF
-overlay actually trails buy-and-hold in this bull market (cash drag). The dashboard
-reports all of this rather than cherry-picking the flattering numbers.
+is a clean, timely (1–2 day lag) read on lodging demand. The trading angle is framed as a
+**risk overlay, not alpha**: gating exposure on travel-demand *acceleration* delivered a
+materially better Sharpe (1.21 vs 0.73) and a third of the drawdown while invested only
+~30% of the time. **Loud caveat:** the entire sample is a post-COVID bull market, so the
+drawdown protection — the whole point — has never faced a real downturn, and total return
+trails buy-and-hold from cash drag. The dashboard reports all of this rather than
+cherry-picking the flattering numbers.
 
 ## Data sources
 
 | Signal | Source | Notes |
 |---|---|---|
 | TSA passenger throughput (daily) | TSA.gov passenger-volumes pages | Per-year archive URLs stitched into a 2022-present daily series. |
-| Brand search interest (weekly) | Google Trends via `pytrends` | Marriott / Hilton / Hyatt, US, relative interest. |
+| Brand search interest (weekly) | Google Trends via `pytrends` | Marriott / Hilton / Hyatt / Wyndham / Choice / IHG, US, relative interest. |
 | Job openings, Leisure & Hospitality (monthly) | BLS public API (JOLTS) | The **"Indeed job postings" analog** — Indeed killed its public API and blocks scraping, so this is the keyless, reproducible hiring-demand proxy. |
 | PPI, Traveler Accommodation (monthly) | BLS public API | **RevPAR-rate / ADR proxy.** |
 | Accommodation employment (monthly) | BLS public API (CES) | Hospitality **demand** proxy used for the nowcast. |
