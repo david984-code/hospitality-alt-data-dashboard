@@ -1,0 +1,40 @@
+name: Weekly regime watch
+
+# Re-runs the pipeline weekly and emails a summary ONLY if the regime/state changed
+# (gate flipped ON/OFF, or the set of anomaly alerts changed). Set the SMTP_* and
+# NOTIFY_TO repository secrets to enable email.
+on:
+  schedule:
+    - cron: "0 13 * * 1"  # Mondays 13:00 UTC
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync
+
+      # Persist the last-seen regime state across runs so change detection works.
+      - name: Restore regime state
+        uses: actions/cache@v4
+        with:
+          path: data/notify_state.json
+          key: notify-state-${{ github.run_id }}
+          restore-keys: notify-state-
+
+      - name: Run regime watch
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_TO: ${{ secrets.NOTIFY_TO }}
+        run: uv run python -m src.notify --skip-trends

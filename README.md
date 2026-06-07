@@ -56,13 +56,14 @@ dashboard reports all of this rather than cherry-picking the flattering numbers.
 ```
 config.py            tickers, universe, BLS series IDs, paths
 src/data/            tsa.py  trends.py  bls.py  prices.py  cache.py  net.py (retry policy)
-src/analysis.py      nowcast, signals, backtest, pooled validation, anomaly flags
+src/analysis.py      nowcast, signals, backtest, significance, risk, stress, earnings study
 src/pipeline.py      orchestrates fetch -> analyze -> outputs/
+src/notify.py        weekly regime-change email watcher
 app.py               Streamlit dashboard
-tests/               pytest unit tests for the analysis math
-.github/workflows/   ci.yml (lint/type/test) + daily.yml (scheduled refresh)
+tests/               pytest unit tests (analysis math + notifier logic)
+.github/workflows/   ci.yml (lint/type/test) + daily.yml (refresh) + weekly_notify.yml (email)
 outputs/             summary.json + CSVs (regenerated each run, gitignored)
-data/                cached raw data (gitignored)
+data/                cached raw data + notifier state (gitignored)
 ```
 
 ## Run it
@@ -95,3 +96,22 @@ uv run pytest -q         # tests
 
 CI runs all four on every push/PR (`.github/workflows/ci.yml`); a scheduled job
 (`daily.yml`) refreshes the data each morning and publishes the outputs as an artifact.
+
+## Weekly regime-change email
+
+`src/notify.py` closes the loop: it runs the pipeline, compares the current regime
+(signal gate ON/OFF + active anomaly alerts) against the last-seen state, and emails a
+summary **only when something changes**.
+
+```bash
+cp .env.example .env          # then fill in SMTP_* (Gmail needs an App Password)
+uv run python -m src.notify --dry-run   # preview the email, no send
+uv run python -m src.notify --always    # send now (first-time test)
+uv run python -m src.notify             # send only if the regime changed
+```
+
+Schedule it weekly either way:
+- **GitHub Actions** — `weekly_notify.yml` runs Mondays; add `SMTP_HOST/PORT/USER/PASSWORD`
+  and `NOTIFY_TO` as repo secrets. State persists across runs via the actions cache.
+- **Windows Task Scheduler** — weekly trigger running
+  `uv run python -m src.notify` in this folder (with the `.env` values exported).

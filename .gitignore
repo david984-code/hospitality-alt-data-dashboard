@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 data/*.csv
+data/*.json
 st.log
 .DS_Store
 .streamlit/secrets.toml
