@@ -145,3 +145,65 @@ def test_pooled_validation_runs_and_is_bounded():
     assert -1.0 <= pv.pooled_r <= 1.0
     assert 0.0 <= pv.signal_on_hit <= 1.0
     assert pv.n_obs > 0
+
+
+def _multi_month(n: int = 30) -> tuple[pd.DataFrame, Signals]:
+    """Synthetic prices (MAR/HLT/H) + monthly signals with a mix of gate on/off."""
+    idx = pd.date_range("2022-01-31", periods=n, freq="ME")
+    rng = np.random.RandomState(7)
+    prices = pd.DataFrame(
+        {t: 100 * (1 + rng.normal(0.01, 0.05, n)).cumprod() for t in ["MAR", "HLT", "H"]},
+        index=idx,
+    )
+    monthly = pd.DataFrame(
+        {
+            "tsa_yoy": rng.normal(5, 2, n),
+            "tsa_accel": rng.normal(0, 1, n),
+            "gate": (rng.random(n) > 0.5).astype(int),
+            "brand_MAR": rng.normal(0, 3, n),
+            "brand_HLT": rng.normal(0, 3, n),
+            "brand_H": rng.normal(0, 3, n),
+        },
+        index=pd.PeriodIndex(idx, freq="M"),
+    )
+    return prices, Signals(monthly=monthly, weekly=pd.DataFrame())
+
+
+def test_strategy_significance_bounded():
+    prices, signals = _multi_month()
+    bt = analysis.backtest_top2(prices, signals)
+    sig = analysis.strategy_significance(bt, prices, signals)
+    assert sig.n_months >= 2
+    assert 0.0 <= sig.naive_p <= 1.0
+    assert 0.0 <= sig.clustered_p <= 1.0
+    assert 0.0 <= sig.gate_p <= 1.0
+    assert not np.isnan(sig.gate_on_mean)
+
+
+def test_equity_curves_shape():
+    prices, signals = _multi_month()
+    bt = analysis.backtest_top2(prices, signals)
+    eq = analysis.equity_curves(bt, prices)
+    assert list(eq.columns) == ["strategy", "baseline"]
+    assert isinstance(eq.index, pd.DatetimeIndex)
+    assert (eq["strategy"] > 0).all() and (eq["baseline"] > 0).all()
+
+
+def test_earnings_search_study():
+    weeks = pd.date_range("2022-01-02", periods=120, freq="W")
+    rng = np.random.RandomState(3)
+    trends = pd.DataFrame({"MAR": rng.normal(50, 5, 120)}, index=weeks)
+    days = pd.date_range("2022-01-03", periods=600, freq="D")
+    prices = pd.DataFrame({"MAR": 100 * (1 + rng.normal(0.0005, 0.01, 600)).cumprod()}, index=days)
+    earnings = pd.DataFrame(
+        {
+            "ticker": ["MAR"] * 5,
+            "earnings": pd.to_datetime(
+                ["2023-02-15", "2023-05-15", "2023-08-15", "2023-11-15", "2024-02-15"]
+            ),
+        }
+    )
+    study = analysis.earnings_search_study(earnings, trends, prices)
+    assert study.n >= 3
+    assert -1.0 <= study.corr <= 1.0
+    assert set(study.events.columns) >= {"ticker", "earnings", "pre_search_z", "reaction_pct"}
