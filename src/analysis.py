@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 import config
 
@@ -260,3 +261,164 @@ def upcoming_earnings(earnings: pd.DataFrame, within_days: int = 30) -> pd.DataF
     nxt = fut.sort_values("earnings").groupby("ticker").first().reset_index()
     nxt["days_out"] = (nxt["earnings"] - today).dt.days
     return nxt[nxt["days_out"] <= within_days].sort_values("days_out")
+
+
+# ----------------------------------------------------------------------------- significance
+@dataclass
+class Significance:
+    n_positions: int
+    n_months: int
+    naive_t: float  # per-position t-test vs 0 (overstates: ignores clustering)
+    naive_p: float
+    clustered_t: float  # 1 obs per signal-on month (the honest test)
+    clustered_p: float
+    gate_on_mean: float  # mean fwd return of the 3 names in gate-ON months
+    gate_off_mean: float
+    gate_t: float  # gate-ON vs gate-OFF (does the timing gate matter?)
+    gate_p: float
+
+
+def _headline_fwd_returns(prices: pd.DataFrame) -> pd.Series:
+    """Equal-weight 1-month forward return of the headline names, by month."""
+    pm = _to_period(prices.resample("ME").last())
+    fwd1 = pm[config.TICKERS].pct_change().shift(-1) * 100
+    return fwd1.mean(axis=1)
+
+
+def _gate_on_off_test(prices: pd.DataFrame, signals: Signals) -> tuple[float, float, float, float]:
+    """Welch t-test of equal-weight forward return in gate-ON vs gate-OFF months."""
+    fwd = _headline_fwd_returns(prices)
+    gate = signals.monthly["gate"]
+    on = fwd[gate.index[gate > 0]].dropna()
+    off = fwd[gate.index[gate <= 0]].dropna()
+    t, p = stats.ttest_ind(on, off, equal_var=False)
+    return float(on.mean()), float(off.mean()), float(t), float(p)
+
+
+def strategy_significance(
+    backtest: Backtest, prices: pd.DataFrame, signals: Signals
+) -> Significance:
+    """Honest statistics on the strategy: naive vs month-clustered, plus the gate test."""
+    tr = backtest.trades
+    per_pos = tr["fwd_return_pct"].to_numpy()
+    monthly = tr.groupby("rebalance")["fwd_return_pct"].mean().to_numpy()
+    nt, npv = stats.ttest_1samp(per_pos, 0.0)
+    ct, cpv = stats.ttest_1samp(monthly, 0.0)
+    on_m, off_m, gt, gp = _gate_on_off_test(prices, signals)
+    return Significance(
+        n_positions=len(per_pos),
+        n_months=len(monthly),
+        naive_t=float(nt),
+        naive_p=float(npv),
+        clustered_t=float(ct),
+        clustered_p=float(cpv),
+        gate_on_mean=on_m,
+        gate_off_mean=off_m,
+        gate_t=gt,
+        gate_p=gp,
+    )
+
+
+# ----------------------------------------------------------------------------- equity curves
+def equity_curves(backtest: Backtest, prices: pd.DataFrame) -> pd.DataFrame:
+    """Calendar-time cumulative growth of $1: strategy (long picks when the gate is
+    ON, cash otherwise) vs the always-long baseline. Both start at 1.0."""
+    pm = _to_period(prices.resample("ME").last())
+    base_m = pm[config.TICKERS].pct_change().shift(-1).mean(axis=1)
+    idx = base_m.dropna().index
+
+    strat_m = backtest.trades.groupby("rebalance")["fwd_return_pct"].mean() / 100.0
+    strat_m.index = pd.PeriodIndex(strat_m.index, freq="M")
+    strat = strat_m.reindex(idx).fillna(0.0)  # cash (0%) in gate-OFF months
+
+    out = pd.DataFrame(
+        {
+            "strategy": (1 + strat).cumprod(),
+            "baseline": (1 + base_m.loc[idx].fillna(0.0)).cumprod(),
+        }
+    )
+    out.index = pd.PeriodIndex(out.index).to_timestamp()
+    out.index.name = "date"
+    return out
+
+
+# ----------------------------------------------------------------------------- earnings study
+@dataclass
+class EarningsStudy:
+    events: pd.DataFrame  # ticker, earnings, pre_search_z, reaction_pct
+    corr: float  # corr(pre-earnings search z, post-earnings reaction)
+    high_search_hit: float  # P(reaction > 0 | pre-search z > 0)
+    n: int
+
+
+def _presearch_z(search: pd.Series, date: pd.Timestamp, weeks: int) -> float | None:
+    """Z-score of mean brand search in the `weeks` before earnings vs trailing year."""
+    hist = search.dropna()
+    hist = hist[hist.index < date]
+    if len(hist) < 30:
+        return None
+    recent = hist.tail(weeks).mean()
+    base = hist.tail(52)
+    sd = base.std()
+    if sd == 0 or np.isnan(sd):
+        return None
+    return float((recent - base.mean()) / sd)
+
+
+def _reaction(px: pd.Series, date: pd.Timestamp, post_days: int) -> float | None:
+    """Pct price change from the last close before earnings to `post_days` after."""
+    s = px.dropna()
+    before = s[s.index <= date]
+    after = s[s.index > date]
+    if before.empty or len(after) < post_days:
+        return None
+    return float((after.iloc[post_days - 1] / before.iloc[-1] - 1.0) * 100)
+
+
+def _collect_events(
+    earnings: pd.DataFrame,
+    trends: pd.DataFrame,
+    prices: pd.DataFrame,
+    pre_weeks: int,
+    post_days: int,
+) -> pd.DataFrame:
+    """One row per earnings date with pre-search z and the realized price reaction."""
+    rows = []
+    for _, e in earnings.iterrows():
+        t = e["ticker"]
+        d = pd.Timestamp(e["earnings"]).normalize()
+        if t not in trends.columns or t not in prices.columns:
+            continue
+        z = _presearch_z(trends[t], d, pre_weeks)
+        react = _reaction(prices[t], d, post_days)
+        if z is None or react is None:
+            continue
+        rows.append(
+            {
+                "ticker": t,
+                "earnings": d.date(),
+                "pre_search_z": round(z, 2),
+                "reaction_pct": round(react, 2),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def earnings_search_study(
+    earnings: pd.DataFrame,
+    trends: pd.DataFrame,
+    prices: pd.DataFrame,
+    pre_weeks: int = 4,
+    post_days: int = 3,
+) -> EarningsStudy:
+    """Event study: does elevated pre-earnings brand search precede the price reaction?"""
+    ev = _collect_events(earnings, trends, prices, pre_weeks, post_days)
+    if len(ev) < 3:
+        return EarningsStudy(ev, float("nan"), float("nan"), len(ev))
+    hi = ev[ev["pre_search_z"] > 0]
+    return EarningsStudy(
+        events=ev.sort_values("earnings"),
+        corr=float(ev["pre_search_z"].corr(ev["reaction_pct"])),
+        high_search_hit=float((hi["reaction_pct"] > 0).mean()) if len(hi) else float("nan"),
+        n=len(ev),
+    )

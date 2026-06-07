@@ -16,7 +16,12 @@ TICKERS = ["MAR", "HLT", "H"]
 TICKER_NAMES = {"MAR": "Marriott", "HLT": "Hilton", "H": "Hyatt"}
 
 # Broader lodging universe used to validate the signal out-of-sample (pooled).
-UNIVERSE = ["MAR", "HLT", "H", "IHG", "WH", "CHH", "HST", "PK", "RHP", "APLE"]
+# Split by business model — the brand-momentum thesis applies to asset-light
+# franchisors; the REITs that own the real estate are a separate, rate-sensitive
+# comp set, so we validate the two buckets independently.
+FRANCHISORS = ["MAR", "HLT", "H", "WH", "CHH", "IHG", "HGV", "VAC", "TNL"]
+REITS = ["HST", "PK", "RHP", "APLE", "DRH", "PEB", "SHO", "XHR", "RLJ", "INN"]
+UNIVERSE = FRANCHISORS + REITS
 
 # Google Trends brand search terms (one per ticker, booking-intent flavored).
 TREND_TERMS = {
