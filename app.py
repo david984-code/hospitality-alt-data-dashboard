@@ -189,13 +189,52 @@ disp = pd.DataFrame(
     }
 )
 st.dataframe(disp, width="stretch")
-st.warning(
-    "⚠️ **Bull-market caveat:** the entire sample is post-COVID up-market, so the drawdown "
-    "protection — the whole point of the overlay — has never faced a real downturn. The "
-    "−8% vs −25% max drawdown is suggestive, not proven. Total return trails buy-and-hold "
-    "purely from cash drag (invested only ~30% of months)."
+st.caption(
+    "The study window above (2022+) is deliberately post-COVID to avoid 2020-21 YoY "
+    "base-effect distortions, so it is all bull market and total return trails buy-and-hold "
+    "from cash drag. The **COVID stress test** below extends to 2019 to put the drawdown "
+    "protection against a real crash."
 )
 
+# --- COVID stress test (full 2019+ history) ---
+if res.stress is not None:
+    srt = res.stress.risk.table
+    ss = srt.loc["Signal (demand-gated)"]
+    sb = srt.loc["Always-long"]
+    st.markdown(f"**🦠 COVID stress test** — overlay over full history from {res.stress.start}")
+    x1, x2, x3 = st.columns(3)
+    x1.metric(
+        "Overlay max drawdown",
+        f"{ss['max_drawdown']:.0%}",
+        delta=f"{(ss['max_drawdown'] - sb['max_drawdown']):+.0%} vs always-long",
+    )
+    x2.metric("Always-long max drawdown", f"{sb['max_drawdown']:.0%}")
+    x3.metric(
+        "Overlay Sharpe",
+        f"{ss['sharpe']:.2f}",
+        delta=f"{(ss['sharpe'] - sb['sharpe']):+.2f} vs always-long",
+    )
+    seq = res.stress.equity
+    if not seq.empty:
+        sfig = go.Figure()
+        sfig.add_trace(go.Scatter(x=seq.index, y=seq["strategy"], name="Overlay (cash when OFF)"))
+        sfig.add_trace(
+            go.Scatter(x=seq.index, y=seq["baseline"], name="Always-long", line=dict(dash="dot"))
+        )
+        sfig.update_layout(
+            height=280,
+            margin=dict(l=10, r=10, t=30, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
+        )
+        st.plotly_chart(sfig, width="stretch")
+    st.caption(
+        f"Across 2019–present — including the COVID crash — the demand gate cut the worst "
+        f"drawdown from {sb['max_drawdown']:.0%} to {ss['max_drawdown']:.0%} by going to cash "
+        "as travel collapsed. This is the downturn evidence the 2022+ window can't provide. "
+        "Caveat: COVID is a single event and 2020-21 YoY math is noisy from base effects."
+    )
+
+st.divider()
 ec1, ec2 = st.columns([3, 2])
 with ec1:
     eq = res.equity
@@ -311,7 +350,7 @@ with a1:
 with a2:
     st.subheader("Upcoming earnings (next 30 days)")
     if res.upcoming.empty:
-        st.caption("No MAR/HLT/H earnings within the next 30 days.")
+        st.caption(f"No earnings within the next 30 days for {', '.join(config.TICKERS)}.")
     else:
         up = res.upcoming.copy()
         up["earnings"] = pd.to_datetime(up["earnings"]).dt.strftime("%Y-%m-%d")
