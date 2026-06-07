@@ -60,10 +60,22 @@ with st.sidebar.expander("Methodology & data proxies"):
 
 # ----------------------------------------------------------------------------- header
 st.title("Hospitality Alt-Data Dashboard")
+_dd_cut = ""
+if res.stress is not None:
+    _dd = res.stress.risk.table["max_drawdown"].to_dict()
+    _s_dd = float(_dd["Signal (demand-gated)"])
+    _b_dd = float(_dd["Always-long"])
+    if _b_dd < 0:
+        _dd_cut = (
+            f" plus a demand-gated risk overlay that cut COVID drawdown ~{1 - _s_dd / _b_dd:.0%}"
+        )
 st.markdown(
-    "A real-time **nowcast of US lodging demand** from public alternative data, plus a "
-    "demand-gated **risk overlay** across the major lodging franchisor brands "
-    f"({', '.join(config.TICKERS)})."
+    f"**A real-time nowcast of US lodging demand (r = {res.nowcast.r_coincident:.2f}){_dd_cut} — "
+    "built entirely from free public alt-data.**"
+)
+st.caption(
+    f"TSA throughput + Google Trends + BLS labor → signals for {', '.join(config.TICKERS)}. "
+    "Research / monitoring tool, not investment advice."
 )
 
 # ----------------------------------------------------------------------------- 1. NOWCAST (lead)
@@ -153,8 +165,8 @@ b_row = rt.loc["Always-long"]
 st.header("3 · Demand-gated risk overlay")
 st.markdown(
     "Be long the franchisor brands **only when travel demand is accelerating**; hold cash "
-    "otherwise. The pitch is *risk management*, not alpha: matching equity-like risk-adjusted "
-    "returns with a fraction of the exposure and drawdown."
+    "otherwise. The pitch is *risk management, not alpha* — and the value is the **timing "
+    "gate**; the brand-momentum stock selection is secondary (it adds little over equal-weight)."
 )
 
 r1, r2, r3, r4 = st.columns(4)
@@ -162,7 +174,7 @@ r1.metric(
     "Sharpe (overlay)",
     f"{s_row['sharpe']:.2f}",
     delta=f"{(s_row['sharpe'] - b_row['sharpe']):+.2f} vs always-long",
-    help="Annualized, rf = 0. Comparable Sharpe with far less time exposed.",
+    help="Annualized, rf = 0 (study window, 2022+).",
 )
 r2.metric(
     "Max drawdown",
@@ -177,31 +189,17 @@ r4.metric(
     delta=f"vs {b_row['total_growth']:.2f}x always-long",
     delta_color="off",
 )
-
-disp = pd.DataFrame(
-    {
-        "Sharpe": rt["sharpe"].round(2),
-        "Ann. return": (rt["ann_return"] * 100).round(1).astype(str) + "%",
-        "Ann. vol": (rt["ann_vol"] * 100).round(1).astype(str) + "%",
-        "Max drawdown": (rt["max_drawdown"] * 100).round(1).astype(str) + "%",
-        "Time in mkt": (rt["in_market"] * 100).round(0).astype(int).astype(str) + "%",
-        "Growth": rt["total_growth"].round(2).astype(str) + "x",
-    }
-)
-st.dataframe(disp, width="stretch")
 st.caption(
-    "The study window above (2022+) is deliberately post-COVID to avoid 2020-21 YoY "
-    "base-effect distortions, so it is all bull market and total return trails buy-and-hold "
-    "from cash drag. The **COVID stress test** below extends to 2019 to put the drawdown "
-    "protection against a real crash."
+    "Study window is 2022+ (post-COVID, to avoid 2020-21 YoY base-effect noise), so it is all "
+    "bull market and total return trails buy-and-hold on cash drag. The real test is the crash:"
 )
 
-# --- COVID stress test (full 2019+ history) ---
+# --- COVID stress test (full 2019+ history) — the headline proof ---
 if res.stress is not None:
     srt = res.stress.risk.table
     ss = srt.loc["Signal (demand-gated)"]
     sb = srt.loc["Always-long"]
-    st.markdown(f"**🦠 COVID stress test** — overlay over full history from {res.stress.start}")
+    st.markdown(f"#### 🦠 COVID stress test — full history from {res.stress.start}")
     x1, x2, x3 = st.columns(3)
     x1.metric(
         "Overlay max drawdown",
@@ -222,47 +220,25 @@ if res.stress is not None:
             go.Scatter(x=seq.index, y=seq["baseline"], name="Always-long", line=dict(dash="dot"))
         )
         sfig.update_layout(
-            height=280,
+            height=300,
             margin=dict(l=10, r=10, t=30, b=10),
             legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
         )
         st.plotly_chart(sfig, width="stretch")
     st.caption(
-        f"Across 2019–present — including the COVID crash — the demand gate cut the worst "
-        f"drawdown from {sb['max_drawdown']:.0%} to {ss['max_drawdown']:.0%} by going to cash "
-        "as travel collapsed. This is the downturn evidence the 2022+ window can't provide. "
-        "Caveat: COVID is a single event and 2020-21 YoY math is noisy from base effects."
+        f"Through the COVID crash the demand gate cut the worst drawdown from "
+        f"{sb['max_drawdown']:.0%} to {ss['max_drawdown']:.0%} by going to cash as travel "
+        "collapsed — the downturn evidence the 2022+ window can't give. Caveat: COVID is one "
+        "event and 2020-21 YoY math is noisy from base effects."
     )
 
-st.divider()
-ec1, ec2 = st.columns([3, 2])
-with ec1:
-    eq = res.equity
-    if not eq.empty:
-        st.markdown("**Cumulative growth of \\$1 (calendar time)**")
-        eqfig = go.Figure()
-        eqfig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="Overlay (cash when OFF)"))
-        eqfig.add_trace(
-            go.Scatter(x=eq.index, y=eq["baseline"], name="Always-long", line=dict(dash="dot"))
-        )
-        eqfig.update_layout(
-            height=300,
-            margin=dict(l=10, r=10, t=40, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
-        )
-        st.plotly_chart(eqfig, width="stretch")
-with ec2:
-    st.markdown("**Is the timing itself real?** (small-sample significance)")
-    st.caption(
-        f"Naive per-position {pval_label(sig.naive_p)} overstates it — the names held in a "
-        f"given month move together. Clustered by month: **{pval_label(sig.clustered_p)}**; "
-        f"gate-ON vs gate-OFF **{pval_label(sig.gate_p)}** "
-        f"({sig.gate_on_mean:+.1f}% vs {sig.gate_off_mean:+.1f}%/mo). "
-        f"Over only {sig.n_months} signal-on months the edge is borderline — which is exactly "
-        "why this is framed as a risk overlay, not an alpha claim."
-    )
+st.caption(
+    f"**Is the timing real?** Clustered by month {pval_label(sig.clustered_p)}; gate-ON vs "
+    f"gate-OFF {pval_label(sig.gate_p)} ({sig.gate_on_mean:+.1f}% vs {sig.gate_off_mean:+.1f}%/mo). "
+    f"Borderline on {sig.n_months} signal-on months — hence 'risk overlay', not an alpha claim."
+)
 
-st.markdown("**Out-of-sample validation by business model**")
+st.markdown("**Out-of-sample validation** — signal on names it was never tuned on")
 v1, v2 = st.columns(2)
 fr_cols = [t for t in config.FRANCHISORS if t in res.universe_prices.columns]
 reit_cols = [t for t in config.REITS if t in res.universe_prices.columns]
@@ -272,7 +248,7 @@ v1.metric(
     f"Franchisors ({len(fr_cols)})",
     f"{vf.signal_on_hit:.0%} hit",
     delta=f"{(vf.signal_on_hit - vf.baseline_hit):+.0%} vs base | r={vf.pooled_r:+.2f}",
-    help="Asset-light brands: MAR/HLT/H/WH/CHH/IHG + timeshares HGV/VAC/TNL.",
+    help="Asset-light brands incl. MAR/HLT/H/WH/CHH/IHG + timeshares HGV/VAC/TNL.",
 )
 v2.metric(
     f"Hotel REITs ({len(reit_cols)})",
@@ -281,26 +257,54 @@ v2.metric(
     help="Own the real estate: HST/PK/RHP/APLE/DRH/PEB/SHO/XHR/RLJ/INN.",
 )
 st.caption(
-    "The TSA-acceleration → next-month-return effect shows up in **both** business models "
-    "(franchisors and REITs), on names the signal was never tuned on — which argues it's a "
-    "real sector-demand effect, not overfitting to the traded names. Splitting the two "
-    "buckets matters because franchisors are fee/growth stories while REITs are "
-    "rate/RevPAR stories."
+    "The effect holds across **both** business models (franchisors are fee/growth, REITs are "
+    "rate/RevPAR), which argues it's a real sector-demand effect, not overfitting."
 )
 
-with st.expander("Show all backtest positions"):
+with st.expander("Details — full risk table, study-window curve, all positions"):
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "Sharpe": rt["sharpe"].round(2),
+                "Ann. return": (rt["ann_return"] * 100).round(1).astype(str) + "%",
+                "Ann. vol": (rt["ann_vol"] * 100).round(1).astype(str) + "%",
+                "Max drawdown": (rt["max_drawdown"] * 100).round(1).astype(str) + "%",
+                "Time in mkt": (rt["in_market"] * 100).round(0).astype(int).astype(str) + "%",
+                "Growth": rt["total_growth"].round(2).astype(str) + "x",
+            }
+        ),
+        width="stretch",
+    )
+    eq = res.equity
+    if not eq.empty:
+        st.caption("Study-window (2022+) cumulative growth — note the cash drag vs always-long.")
+        eqfig = go.Figure()
+        eqfig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="Overlay (cash when OFF)"))
+        eqfig.add_trace(
+            go.Scatter(x=eq.index, y=eq["baseline"], name="Always-long", line=dict(dash="dot"))
+        )
+        eqfig.update_layout(
+            height=280,
+            margin=dict(l=10, r=10, t=20, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
+        )
+        st.plotly_chart(eqfig, width="stretch")
     st.dataframe(bt.trades, width="stretch", hide_index=True)
 
 st.divider()
 
-# ----------------------------------------------------------------------------- 4. EARNINGS SEARCH
-st.header("4 · Do pre-earnings searches predict the print?")
+# ----------------------------------------------------------------------------- 4. EARNINGS SEARCH (null)
 study = res.earnings_study
+st.subheader("Bonus — do pre-earnings searches predict the print?")
 if study.n < 3:
-    st.info("Not enough earnings events with overlapping search history yet.")
+    st.caption("Not enough earnings events with overlapping search history yet.")
 else:
-    e1, e2 = st.columns([3, 2])
-    with e1:
+    st.caption(
+        f"Tested the anomaly-alert premise across {study.n} earnings events: correlation "
+        f"{study.corr:+.2f} (weak). An honest **null result** — search intensity is not a "
+        "reliable earnings predictor on this sample. Scatter in the expander."
+    )
+    with st.expander("Earnings-search event study (null result)"):
         ev = study.events
         scat = go.Figure()
         scat.add_trace(
@@ -314,24 +318,13 @@ else:
         )
         scat.update_layout(
             height=320,
-            margin=dict(l=10, r=10, t=30, b=10),
-            title="Pre-earnings brand-search z vs price reaction",
+            margin=dict(l=10, r=10, t=10, b=10),
             xaxis_title="Pre-earnings search z-score (4wk vs trailing year)",
-            yaxis_title=f"Reaction % (close before → {3}d after)",
+            yaxis_title="Reaction % (close before → 3d after)",
         )
         scat.add_hline(y=0, line_dash="dot", line_color="gray")
         scat.add_vline(x=0, line_dash="dot", line_color="gray")
         st.plotly_chart(scat, width="stretch")
-    with e2:
-        st.metric("Correlation", f"{study.corr:+.2f}", help="search z vs earnings reaction")
-        st.metric("Up-reaction | high search", f"{study.high_search_hit:.0%}")
-        st.metric("Events", f"{study.n}")
-        st.caption(
-            "Tests the premise behind the anomaly alerts: does a brand-search spike before a "
-            f"print foreshadow the reaction? Across {study.n} events the relationship is "
-            "weak — honestly, search intensity is not (yet) a reliable earnings predictor "
-            "on this sample. Reported rather than hidden."
-        )
 
 st.divider()
 

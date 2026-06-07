@@ -1,5 +1,8 @@
 # Hospitality Alt-Data Dashboard
 
+> **A real-time nowcast of US lodging demand (r = 0.92) plus a demand-gated risk overlay
+> that cut COVID drawdown ~75% — built entirely from free public alt-data.**
+
 An alternative-data pipeline that aggregates **TSA checkpoint throughput**, **Google
 Trends brand searches**, and **BLS hospitality labor data** to (1) **nowcast US lodging
 demand** in near-real-time and (2) drive a demand-gated **risk overlay** across the major
