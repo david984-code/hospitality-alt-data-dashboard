@@ -11,9 +11,10 @@ dashboard with pre-earnings anomaly alerts.
 | Result | Value |
 |---|---|
 | **Primary deliverable** — TSA volume as a demand nowcast (TSA YoY vs Accommodation-employment YoY, coincident) | **r = 0.92** |
-| **Risk overlay** — long top-2 franchisor brands when travel demand is accelerating, else cash | **Sharpe 1.21 vs 0.73** always-long; **max drawdown −7% vs −23%**; invested only ~30% of months |
-| Timing significance (clustered by month) | per-position p = 0.003 (naive) → **clustered p = 0.01**; gate-ON vs gate-OFF p = 0.09 |
-| Out-of-sample validation, pooled across a 20-name universe | franchisors 68% vs 58% (r = 0.12, n = 144); REITs 63% vs 52% (r = 0.16, n = 160) |
+| **Risk overlay** (study window, 2022+) — long top-2 franchisor brands when travel demand is accelerating, else cash | **Sharpe ~1.0 vs 0.73** always-long; **max drawdown −6% vs −23%**; invested only ~30% of months |
+| **COVID stress test** (full history, 2019+) — same overlay through the crash | **max drawdown −11% vs −44%**; Sharpe 0.94 vs 0.66 — the gate went to cash as travel collapsed |
+| Timing significance (clustered by month) | per-position p ≈ 0.005 (naive) → **clustered p ≈ 0.03**; gate-ON vs gate-OFF p ≈ 0.09 |
+| Out-of-sample validation, pooled across a 20-name universe | franchisors 68% vs 58% (r = 0.12); REITs 63% vs 52% (r = 0.16) |
 
 > Numbers are a nowcast and move with each data refresh; the figures above are the
 > reproducible output of `uv run python -m src.pipeline` on the date noted.
@@ -21,11 +22,13 @@ dashboard with pre-earnings anomaly alerts.
 **The honest takeaway:** the headline deliverable is the **r = 0.92 demand nowcast** — TSA
 is a clean, timely (1–2 day lag) read on lodging demand. The trading angle is framed as a
 **risk overlay, not alpha**: gating exposure on travel-demand *acceleration* delivered a
-materially better Sharpe (1.21 vs 0.73) and a third of the drawdown while invested only
-~30% of the time. **Loud caveat:** the entire sample is a post-COVID bull market, so the
-drawdown protection — the whole point — has never faced a real downturn, and total return
-trails buy-and-hold from cash drag. The dashboard reports all of this rather than
-cherry-picking the flattering numbers.
+better Sharpe (~1.0 vs 0.73) and a fraction of the drawdown while invested only ~30% of the
+time. The **COVID stress test** extends the overlay to 2019 (the limit of public TSA data)
+and is the key downturn evidence: through the crash it held max drawdown to **−11% vs −44%**
+for buy-and-hold. **Caveats kept loud:** COVID is a single event, 2020-21 YoY math is noisy
+(why the headline study window starts in 2022), the timing edge is only borderline-significant
+on ~16 months, and on total return the overlay trails buy-and-hold from cash drag. The
+dashboard reports all of this rather than cherry-picking the flattering numbers.
 
 ## Data sources
 
