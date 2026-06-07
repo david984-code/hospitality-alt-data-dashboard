@@ -182,12 +182,18 @@ r2.metric(
     delta=f"{(s_row['max_drawdown'] - b_row['max_drawdown']):+.0%} vs always-long",
     help="Worst peak-to-trough. Smaller (less negative) is better.",
 )
-r3.metric("Time in market", f"{s_row['in_market']:.0%}", help="% of months actually invested.")
+r3.metric(
+    "Time in market",
+    f"{s_row['in_market']:.0%}",
+    help="% of months actually invested (the rest in cash).",
+)
 r4.metric(
     "Total growth",
     f"{s_row['total_growth']:.2f}x",
-    delta=f"vs {b_row['total_growth']:.2f}x always-long",
-    delta_color="off",
+    help=(
+        f"vs {b_row['total_growth']:.2f}x always-long — lower by design: the overlay sits in "
+        "cash most months, so it trades total return for much less risk."
+    ),
 )
 st.caption(
     "Study window is 2022+ (post-COVID, to avoid 2020-21 YoY base-effect noise), so it is all "
@@ -260,6 +266,22 @@ st.caption(
     "The effect holds across **both** business models (franchisors are fee/growth, REITs are "
     "rate/RevPAR), which argues it's a real sector-demand effect, not overfitting."
 )
+
+with st.expander("📅 When was the gate ON? — signal history & realized returns", expanded=True):
+    hist = (
+        bt.trades.groupby("rebalance")
+        .agg(picks=("ticker", lambda s: ", ".join(s)), avg_return_pct=("fwd_return_pct", "mean"))
+        .reset_index()
+        .sort_values("rebalance", ascending=False)
+    )
+    hist["avg_return_pct"] = hist["avg_return_pct"].round(2)
+    hist["result"] = ["up" if v > 0 else "down" for v in hist["avg_return_pct"]]
+    hist = hist.rename(columns={"rebalance": "month", "picks": "long picks"})
+    st.caption(
+        f"The gate was ON in {len(hist)} months. Each row: the 2 names held and the realized "
+        "next-month return. Months not listed = gate OFF (in cash)."
+    )
+    st.dataframe(hist, width="stretch", hide_index=True)
 
 with st.expander("Details — full risk table, study-window curve, all positions"):
     st.dataframe(
