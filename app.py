@@ -192,6 +192,7 @@ ec1, ec2 = st.columns([3, 2])
 with ec1:
     eq = res.equity
     if not eq.empty:
+        st.markdown("**Cumulative growth of \\$1 (calendar time)**")
         eqfig = go.Figure()
         eqfig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="Signal (cash when OFF)"))
         eqfig.add_trace(
@@ -201,9 +202,8 @@ with ec1:
         )
         eqfig.update_layout(
             height=300,
-            margin=dict(l=10, r=10, t=30, b=10),
-            title="Cumulative growth of $1 (calendar time)",
-            legend=dict(orientation="h", y=1.15),
+            margin=dict(l=10, r=10, t=40, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
         )
         st.plotly_chart(eqfig, width="stretch")
 with ec2:
