@@ -6,21 +6,26 @@ and time a long strategy in **Marriott (MAR)**, **Hilton (HLT)**, and **Hyatt (H
 ahead of quarterly earnings. Results are served through a daily-refreshing Streamlit
 dashboard with pre-earnings anomaly alerts.
 
-## Headline findings (computed on 2022-2026 data)
+## Headline findings (computed on 2022-2026 data; as of 2026-06-04 snapshot)
 
 | Result | Value |
 |---|---|
-| TSA volume as a demand nowcast (TSA YoY vs Accommodation-employment YoY, coincident) | **r = 0.91** |
-| Strategy: long top-2 of MAR/HLT/H on a positive TSA-acceleration signal, 1-month hold | **81% hit rate**, +4.2% mean / position, across 32 positions (16 rebalances) |
-| Baseline (always-long the three names) | 61% hit rate, +1.9% mean |
-| Out-of-sample validation, pooled across a 10-name lodging universe | hit 70% vs 58% baseline, pooled r = 0.16, n = 160 |
+| **Primary finding** — TSA volume as a demand nowcast (TSA YoY vs Accommodation-employment YoY, coincident) | **r = 0.92** |
+| Exploratory timing signal: long top-2 of MAR/HLT/H on a positive TSA-acceleration signal, 1-month hold | 78% hit rate, +3.8% mean / position (16 signal-on months) vs 62% / +1.9% always-long baseline |
+| Significance (honest, clustered by month) | per-position p = 0.008 (naive) → **clustered p = 0.06**; gate-ON vs gate-OFF p = 0.17 — **economically large, not statistically significant** at this sample |
+| Out-of-sample validation, pooled across a 20-name universe | franchisors 68% vs 58% (r = 0.12, n = 144); REITs 63% vs 52% (r = 0.16, n = 160) |
 
-**The signal:** the tradeable edge is in the *second derivative* of travel demand.
-When TSA year-over-year growth is **accelerating**, lodging equities outperform over
-the next ~1 month. The level of TSA YoY by itself has no edge over a buy-and-hold in a
-hotel bull market; the acceleration does. The relationship holds across a broader
-lodging universe (IHG, WH, CHH and the hotel REITs HST/PK/RHP/APLE), which argues it
-is not overfit to the three headline names.
+> Numbers are a nowcast and move with each data refresh; the figures above are the
+> reproducible output of `uv run python -m src.pipeline` on the date noted.
+
+**The honest takeaway:** the headline deliverable is the **r = 0.92 demand nowcast** — TSA
+is a clean, timely (1–2 day lag) read on lodging demand. The *timing signal* is a
+research hypothesis: the edge is in the **second derivative** (when TSA YoY growth is
+*accelerating*, lodging tends to outperform the next month), it shows up across both
+asset-light franchisors and hotel REITs (so it isn't overfit to three tickers), but on
+~16 signal-on months it is **not yet statistically significant** and a cash-when-OFF
+overlay actually trails buy-and-hold in this bull market (cash drag). The dashboard
+reports all of this rather than cherry-picking the flattering numbers.
 
 ## Data sources
 
@@ -31,7 +36,7 @@ is not overfit to the three headline names.
 | Job openings, Leisure & Hospitality (monthly) | BLS public API (JOLTS) | The **"Indeed job postings" analog** — Indeed killed its public API and blocks scraping, so this is the keyless, reproducible hiring-demand proxy. |
 | PPI, Traveler Accommodation (monthly) | BLS public API | **RevPAR-rate / ADR proxy.** |
 | Accommodation employment (monthly) | BLS public API (CES) | Hospitality **demand** proxy used for the nowcast. |
-| Equity prices + earnings dates | Yahoo Finance via `yfinance` | MAR/HLT/H + the 10-name validation universe. |
+| Equity prices + earnings dates | Yahoo Finance via `yfinance` | MAR/HLT/H + a 20-name validation universe (9 asset-light franchisors + 10 hotel REITs, tested separately). |
 
 ### Honest caveats
 - **True RevPAR is STR data (paid).** This project uses BLS Accommodation employment as
