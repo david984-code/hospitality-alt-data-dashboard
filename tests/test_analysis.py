@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+import config
 from src import analysis
 from src.analysis import Signals
 
@@ -46,28 +47,22 @@ def test_demand_nowcast_perfect_coincidence():
 
 
 def _signals_with_one_gate() -> tuple[pd.DataFrame, Signals]:
-    """Prices rising +10%/+5%/0 for MAR/HLT/H, one accelerating month (Jan)."""
+    """MAR +10%/mo, HLT +5%/mo, rest flat; one accelerating month (Jan). Config-driven
+    so it stays valid as the traded universe (config.TICKERS) grows."""
     idx = pd.date_range("2022-01-31", periods=4, freq="ME")
+    growth = {"MAR": 0.10, "HLT": 0.05}
     prices = pd.DataFrame(
-        {
-            "MAR": [100.0, 110.0, 121.0, 133.1],
-            "HLT": [100.0, 105.0, 110.25, 115.76],
-            "H": [100.0, 100.0, 100.0, 100.0],
-        },
+        {t: 100.0 * (1 + growth.get(t, 0.0)) ** np.arange(4) for t in config.TICKERS},
         index=idx,
     )
     months = pd.PeriodIndex(["2022-01", "2022-02", "2022-03"], freq="M")
     monthly = pd.DataFrame(
-        {
-            "tsa_yoy": [5.0, 4.0, 3.0],
-            "tsa_accel": [1.0, -1.0, -1.0],  # only Jan accelerates
-            "gate": [1, 0, 0],
-            "brand_MAR": [9.0, 1.0, 1.0],
-            "brand_HLT": [5.0, 1.0, 1.0],
-            "brand_H": [1.0, 1.0, 1.0],
-        },
+        {"tsa_yoy": [5.0, 4.0, 3.0], "tsa_accel": [1.0, -1.0, -1.0], "gate": [1, 0, 0]},
         index=months,
     )
+    brand_rank = {"MAR": 9.0, "HLT": 5.0}  # MAR & HLT are the top-2 by momentum
+    for t in config.TICKERS:
+        monthly[f"brand_{t}"] = [brand_rank.get(t, 1.0)] * 3
     return prices, Signals(monthly=monthly, weekly=pd.DataFrame())
 
 
@@ -148,11 +143,11 @@ def test_pooled_validation_runs_and_is_bounded():
 
 
 def _multi_month(n: int = 30) -> tuple[pd.DataFrame, Signals]:
-    """Synthetic prices (MAR/HLT/H) + monthly signals with a mix of gate on/off."""
+    """Synthetic prices + monthly signals (config.TICKERS) with a mix of gate on/off."""
     idx = pd.date_range("2022-01-31", periods=n, freq="ME")
     rng = np.random.RandomState(7)
     prices = pd.DataFrame(
-        {t: 100 * (1 + rng.normal(0.01, 0.05, n)).cumprod() for t in ["MAR", "HLT", "H"]},
+        {t: 100 * (1 + rng.normal(0.01, 0.05, n)).cumprod() for t in config.TICKERS},
         index=idx,
     )
     monthly = pd.DataFrame(
@@ -160,12 +155,11 @@ def _multi_month(n: int = 30) -> tuple[pd.DataFrame, Signals]:
             "tsa_yoy": rng.normal(5, 2, n),
             "tsa_accel": rng.normal(0, 1, n),
             "gate": (rng.random(n) > 0.5).astype(int),
-            "brand_MAR": rng.normal(0, 3, n),
-            "brand_HLT": rng.normal(0, 3, n),
-            "brand_H": rng.normal(0, 3, n),
         },
         index=pd.PeriodIndex(idx, freq="M"),
     )
+    for t in config.TICKERS:
+        monthly[f"brand_{t}"] = rng.normal(0, 3, n)
     return prices, Signals(monthly=monthly, weekly=pd.DataFrame())
 
 
@@ -187,6 +181,20 @@ def test_equity_curves_shape():
     assert list(eq.columns) == ["strategy", "baseline"]
     assert isinstance(eq.index, pd.DatetimeIndex)
     assert (eq["strategy"] > 0).all() and (eq["baseline"] > 0).all()
+
+
+def test_risk_metrics_table():
+    prices, signals = _multi_month()
+    bt = analysis.backtest_top2(prices, signals)
+    rm = analysis.risk_metrics(bt, prices)
+    assert set(rm.table.index) == {"Signal (demand-gated)", "Always-long"}
+    for col in ["sharpe", "max_drawdown", "in_market", "ann_return", "ann_vol", "total_growth"]:
+        assert col in rm.table.columns
+    sig_inmkt = rm.table.loc["Signal (demand-gated)", "in_market"]
+    assert 0.0 <= sig_inmkt <= 1.0
+    # Always-long is invested every month; the gated overlay is invested no more than that.
+    assert sig_inmkt <= rm.table.loc["Always-long", "in_market"]
+    assert rm.table.loc["Signal (demand-gated)", "max_drawdown"] <= 0.0
 
 
 def test_earnings_search_study():

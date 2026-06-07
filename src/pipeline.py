@@ -29,6 +29,7 @@ class PipelineResult:
     significance: analysis.Significance
     equity: pd.DataFrame
     earnings_study: analysis.EarningsStudy
+    risk: analysis.RiskMetrics
 
 
 def _trends_frame(tsa_s: pd.Series, force: bool, skip_trends: bool) -> pd.DataFrame:
@@ -56,6 +57,15 @@ def _core_analysis(
     return signals, nowcast, bt, validation, anomalies, upcoming
 
 
+def _extra_analysis(bt, signals, trends_df, price_df, earnings_df) -> tuple:
+    """Significance, equity curves, earnings event study, and risk metrics."""
+    sig = analysis.strategy_significance(bt, price_df, signals)
+    equity = analysis.equity_curves(bt, price_df)
+    study = analysis.earnings_search_study(earnings_df, trends_df, price_df)
+    risk = analysis.risk_metrics(bt, price_df)
+    return sig, equity, study, risk
+
+
 def _analyze(
     tsa_s: pd.Series,
     trends_df: pd.DataFrame,
@@ -67,11 +77,9 @@ def _analyze(
     signals, nowcast, bt, validation, anomalies, upcoming = _core_analysis(
         tsa_s, trends_df, fred_df, price_df, universe_df, earnings_df
     )
-    sig = analysis.strategy_significance(bt, price_df, signals)
-    equity = analysis.equity_curves(bt, price_df)
-    study = analysis.earnings_search_study(earnings_df, trends_df, price_df)
+    sig, equity, study, risk = _extra_analysis(bt, signals, trends_df, price_df, earnings_df)
 
-    _persist(nowcast, bt, validation, signals, anomalies, sig, study)
+    _persist(nowcast, bt, validation, signals, anomalies, sig, study, risk)
     return PipelineResult(
         tsa_s,
         trends_df,
@@ -88,6 +96,7 @@ def _analyze(
         sig,
         equity,
         study,
+        risk,
     )
 
 
@@ -112,7 +121,7 @@ def _nowcast_summary(nowcast) -> dict:
 
 def _strategy_summary(bt) -> dict:
     return {
-        "rule": "Long top-2 of MAR/HLT/H by brand-search momentum when TSA YoY is accelerating; hold 1 month",
+        "rule": "Long top-2 lodging franchisor brands by brand-search momentum when TSA YoY is accelerating; hold 1 month",
         "hit_rate": round(bt.hit_rate, 3) if bt.n_trades else None,
         "mean_return_pct": round(bt.mean_return, 3) if bt.n_trades else None,
         "n_positions": bt.n_trades,
@@ -146,18 +155,19 @@ def _significance_summary(sig) -> dict:
     }
 
 
-def _build_summary(nowcast, bt, validation, sig) -> dict:
+def _build_summary(nowcast, bt, validation, sig, risk) -> dict:
     return {
         "demand_nowcast": _nowcast_summary(nowcast),
         "strategy": _strategy_summary(bt),
         "significance": _significance_summary(sig),
+        "risk_overlay": risk.table.round(3).to_dict(orient="index"),
         "pooled_validation": _validation_summary(validation),
         "generated": pd.Timestamp.now().isoformat(timespec="seconds"),
     }
 
 
-def _persist(nowcast, bt, validation, signals, anomalies, sig, study) -> None:
-    summary = _build_summary(nowcast, bt, validation, sig)
+def _persist(nowcast, bt, validation, signals, anomalies, sig, study, risk) -> None:
+    summary = _build_summary(nowcast, bt, validation, sig, risk)
     (config.OUTPUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2))
     nowcast.table.to_csv(config.OUTPUT_DIR / "nowcast_table.csv")
     if bt.n_trades:
@@ -185,7 +195,7 @@ if __name__ == "__main__":
     )
 
     bt = res.backtest
-    print("\n=== STRATEGY: long top-2 of MAR/HLT/H on positive TSA-acceleration signal ===")
+    print("\n=== STRATEGY: long top-2 franchisor brands on positive TSA-acceleration signal ===")
     print(f"Positions: {bt.n_trades} across {bt.n_rebalances} rebalances")
     print(
         f"Hit rate: {bt.hit_rate:.1%}  mean: {bt.mean_return:+.2f}%   "
@@ -201,6 +211,9 @@ if __name__ == "__main__":
         f"gate-ON {sig.gate_on_mean:+.2f}% vs gate-OFF {sig.gate_off_mean:+.2f}% / mo  "
         f"(Welch p = {sig.gate_p:.4f})"
     )
+
+    print("\n=== RISK OVERLAY (signal vs always-long) ===")
+    print(res.risk.table.round(3).to_string())
 
     v = res.validation
     print("\n=== POOLED VALIDATION (full lodging universe) ===")

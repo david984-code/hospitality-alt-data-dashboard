@@ -11,9 +11,19 @@ OUTPUT_DIR = ROOT / "outputs"
 DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Headline traded names (the resume strategy: long top-2 of these).
-TICKERS = ["MAR", "HLT", "H"]
-TICKER_NAMES = {"MAR": "Marriott", "HLT": "Hilton", "H": "Hyatt"}
+# Traded names — consumer-facing lodging franchisor brands the strategy selects
+# top-2 from. Restricted to brands with a clean Google-Trends search term (so the
+# brand-momentum selection is meaningful); REITs are validation-only (nobody
+# googles "Host Hotels").
+TICKERS = ["MAR", "HLT", "H", "WH", "CHH", "IHG"]
+TICKER_NAMES = {
+    "MAR": "Marriott",
+    "HLT": "Hilton",
+    "H": "Hyatt",
+    "WH": "Wyndham",
+    "CHH": "Choice Hotels",
+    "IHG": "IHG",
+}
 
 # Broader lodging universe used to validate the signal out-of-sample (pooled).
 # Split by business model — the brand-momentum thesis applies to asset-light
@@ -23,11 +33,14 @@ FRANCHISORS = ["MAR", "HLT", "H", "WH", "CHH", "IHG", "HGV", "VAC", "TNL"]
 REITS = ["HST", "PK", "RHP", "APLE", "DRH", "PEB", "SHO", "XHR", "RLJ", "INN"]
 UNIVERSE = FRANCHISORS + REITS
 
-# Google Trends brand search terms (one per ticker, booking-intent flavored).
+# Google Trends brand search terms (one per traded ticker, booking-intent flavored).
 TREND_TERMS = {
     "MAR": "Marriott",
     "HLT": "Hilton",
     "H": "Hyatt",
+    "WH": "Wyndham",
+    "CHH": "Choice Hotels",
+    "IHG": "IHG",
 }
 
 # BLS series used as alt-data / fundamentals proxies (keyless public API).

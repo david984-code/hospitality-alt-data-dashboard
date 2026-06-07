@@ -319,27 +319,62 @@ def strategy_significance(
     )
 
 
-# ----------------------------------------------------------------------------- equity curves
-def equity_curves(backtest: Backtest, prices: pd.DataFrame) -> pd.DataFrame:
-    """Calendar-time cumulative growth of $1: strategy (long picks when the gate is
-    ON, cash otherwise) vs the always-long baseline. Both start at 1.0."""
+# ----------------------------------------------------------------------------- equity / risk
+def _strategy_baseline_returns(
+    backtest: Backtest, prices: pd.DataFrame
+) -> tuple[pd.Series, pd.Series]:
+    """Aligned monthly returns: signal (long picks gate-ON, cash OFF) and always-long."""
     pm = _to_period(prices.resample("ME").last())
     base_m = pm[config.TICKERS].pct_change().shift(-1).mean(axis=1)
     idx = base_m.dropna().index
-
     strat_m = backtest.trades.groupby("rebalance")["fwd_return_pct"].mean() / 100.0
     strat_m.index = pd.PeriodIndex(strat_m.index, freq="M")
     strat = strat_m.reindex(idx).fillna(0.0)  # cash (0%) in gate-OFF months
+    return strat, base_m.loc[idx].fillna(0.0)
 
-    out = pd.DataFrame(
-        {
-            "strategy": (1 + strat).cumprod(),
-            "baseline": (1 + base_m.loc[idx].fillna(0.0)).cumprod(),
-        }
-    )
+
+def equity_curves(backtest: Backtest, prices: pd.DataFrame) -> pd.DataFrame:
+    """Calendar-time cumulative growth of $1: signal (cash when OFF) vs always-long."""
+    strat, base = _strategy_baseline_returns(backtest, prices)
+    out = pd.DataFrame({"strategy": (1 + strat).cumprod(), "baseline": (1 + base).cumprod()})
     out.index = pd.PeriodIndex(out.index).to_timestamp()
     out.index.name = "date"
     return out
+
+
+@dataclass
+class RiskMetrics:
+    table: pd.DataFrame  # rows: Signal / Always-long; cols: sharpe, max_dd, in_market, ...
+    months: int
+
+
+def _series_stats(r: pd.Series) -> dict:
+    """Annualized risk/return stats for a monthly-return series (rf = 0)."""
+    a = r.to_numpy()
+    n = len(a)
+    keys = ["total_growth", "ann_return", "ann_vol", "sharpe", "max_drawdown", "in_market"]
+    if n == 0:
+        return dict.fromkeys(keys, float("nan"))
+    cum = np.cumprod(1 + a)
+    vol = float(a.std(ddof=1) * np.sqrt(12))
+    maxdd = float((cum / np.maximum.accumulate(cum) - 1).min())
+    return {
+        "total_growth": float(cum[-1]),
+        "ann_return": float(cum[-1] ** (12 / n) - 1),
+        "ann_vol": vol,
+        "sharpe": float(a.mean() * 12 / vol) if vol > 0 else float("nan"),
+        "max_drawdown": maxdd,
+        "in_market": float((a != 0).mean()),
+    }
+
+
+def risk_metrics(backtest: Backtest, prices: pd.DataFrame) -> RiskMetrics:
+    """Risk/exposure profile of the demand-gated overlay vs always-long buy-and-hold."""
+    strat, base = _strategy_baseline_returns(backtest, prices)
+    table = pd.DataFrame(
+        {"Signal (demand-gated)": _series_stats(strat), "Always-long": _series_stats(base)}
+    ).T
+    return RiskMetrics(table=table, months=len(strat))
 
 
 # ----------------------------------------------------------------------------- earnings study
