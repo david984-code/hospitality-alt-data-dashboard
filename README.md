@@ -1,15 +1,24 @@
 # Hospitality Alt-Data Dashboard
 
-> **A real-time US lodging-demand nowcast plus a demand-gated risk overlay that cut COVID
-> drawdown ~75% — built entirely from free public alt-data.**
+> **A real-time read on US lodging demand from free alternative data — to get the number on
+> the hotel franchisors (MAR, HLT, H) before the Street, ahead of quarterly prints.**
 
 ![Hospitality Alt-Data Dashboard](docs/dashboard.png)
 
-An alternative-data pipeline that aggregates **TSA checkpoint throughput**, **Google
-Trends brand searches**, and **BLS hospitality labor data** to (1) **nowcast US lodging
-demand** in near-real-time and (2) drive a demand-gated **risk overlay** across the major
-lodging franchisor brands (MAR, HLT, H, WH, CHH, IHG). Served through a Streamlit
-dashboard with pre-earnings anomaly alerts.
+A pipeline that turns free public alternative data — **TSA checkpoint throughput**, **BLS
+hospitality labor**, and **Google Trends brand search** — into a near-real-time read on US
+lodging demand, so you can form a view on the major hotel franchisors (MAR, HLT, H, +
+WH/CHH/IHG) during the ~90-day blackout between earnings. Served through a Streamlit
+dashboard with pre-earnings anomaly alerts. The systematic *demand-gated overlay* further
+down is a risk-management study **on top of** that read — not the headline.
+
+### How an analyst uses it
+- **Between prints:** TSA + brand search give a demand read weeks ahead of BLS and a quarter
+  ahead of company numbers — update your estimate while the Street is still flying blind.
+- **Into a print:** gate ON (travel accelerating) → franchisors have historically firmed the
+  next month; gate OFF → step back. A conviction/sizing input, not an autopilot.
+- **Pre-earnings:** the anomaly panel flags unusual brand-search or travel moves before a
+  name reports.
 
 ## Headline findings (computed on 2022-2026 data; as of 2026-06 snapshot)
 

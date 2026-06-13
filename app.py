@@ -60,22 +60,15 @@ with st.sidebar.expander("Methodology & data proxies"):
 
 # ----------------------------------------------------------------------------- header
 st.title("Hospitality Alt-Data Dashboard")
-_dd_cut = ""
-if res.stress is not None:
-    _dd = res.stress.risk.table["max_drawdown"].to_dict()
-    _s_dd = float(_dd["Signal (demand-gated)"])
-    _b_dd = float(_dd["Always-long"])
-    if _b_dd < 0:
-        _dd_cut = (
-            f" plus a demand-gated risk overlay that cut COVID drawdown ~{1 - _s_dd / _b_dd:.0%}"
-        )
 st.markdown(
-    f"**A real-time US lodging-demand nowcast{_dd_cut} — built entirely from free public "
-    "alt-data.**"
+    "**A real-time read on US lodging demand from free alternative data — to get the number on "
+    f"the hotel franchisors ({', '.join(config.TICKERS)}) before the Street, ahead of quarterly "
+    "prints.**"
 )
 st.caption(
-    f"TSA throughput (primary) + BLS hospitality labor + Google Trends → signals for "
-    f"{', '.join(config.TICKERS)}. Research / monitoring tool, not investment advice."
+    "TSA throughput (primary) + BLS hospitality labor + Google Trends. The systematic overlay "
+    "in §3 is a risk-management study on top of that read — not the headline. "
+    "Research / monitoring tool, not investment advice."
 )
 
 # ----------------------------------------------------------------------------- 1. NOWCAST (lead)
@@ -177,12 +170,12 @@ s_row = rt.loc["Signal (demand-gated)"]
 b_row = rt.loc["Always-long"]
 
 dep = res.risk.deployed
-st.header("3 · Demand-gated risk overlay")
+st.header("3 · Risk-management study (secondary): demand-gated overlay")
 st.markdown(
-    "Be long the franchisor brands **only when travel demand is accelerating**, else hold cash. "
-    "Framed as *risk management, not alpha* — the value is the **timing gate** (brand selection "
-    "is secondary). Signal→execution: month-*t* TSA (known within ~2 days of month-end) sets "
-    "exposure for month *t+1* — no look-ahead."
+    "A study, not the headline. Be long the franchisor brands **only when travel demand is "
+    "accelerating**, else hold cash — *risk management, not alpha*; the value is the **timing "
+    "gate** (brand selection is secondary). Signal→execution: month-*t* TSA (known within ~2 "
+    "days of month-end) sets exposure for month *t+1* — no look-ahead."
 )
 
 r1, r2, r3, r4 = st.columns(4)
