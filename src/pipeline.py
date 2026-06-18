@@ -135,13 +135,14 @@ def run(force: bool = False, skip_trends: bool = False) -> PipelineResult:
 
 def _nowcast_summary(nowcast) -> dict:
     return {
+        "r_deseason_mom": round(nowcast.r_deseason, 3),
+        "r_deseason_p": round(nowcast.r_deseason_p, 4),
+        "r_deseason_n": nowcast.r_deseason_n,
+        "r_mom_raw": round(nowcast.r_mom_growth, 3),
         "r_levels_yoy": round(nowcast.r_levels, 3),
-        "r_mom_growth": round(nowcast.r_mom_growth, 3),
-        "r_mom_p": round(nowcast.r_mom_p, 4),
-        "r_mom_n": nowcast.r_mom_n,
         "r_diff_yoy": round(nowcast.r_diff_yoy, 3),
         "best_lag_months": nowcast.best_lag_months,
-        "note": "levels-of-YoY co-trend (inflated); r on CHANGES (MoM / diff-YoY) is the honest read",
+        "note": "deseasonalized MoM (r_deseason) is the honest read; levels co-trend-inflated, raw MoM seasonally inflated, diff-YoY noisy",
     }
 
 
@@ -219,8 +220,12 @@ if __name__ == "__main__":
     n = res.nowcast
     print("\n=== DEMAND NOWCAST (TSA vs accommodation-employment) ===")
     print(
-        f"r levels-of-YoY = {n.r_levels:.3f} (co-trending, inflated)  |  "
-        f"MoM-growth = {n.r_mom_growth:.3f}  |  diff-YoY = {n.r_diff_yoy:.3f}  (honest)"
+        f"deseasonalized MoM r = {n.r_deseason:.3f} (p={n.r_deseason_p:.3f}, n={n.r_deseason_n}) "
+        "<- honest read"
+    )
+    print(
+        f"  context: raw MoM {n.r_mom_growth:.3f} (seasonally inflated) | "
+        f"levels-YoY {n.r_levels:.3f} (co-trend inflated) | diff-YoY {n.r_diff_yoy:.3f} (noisy)"
     )
 
     bt = res.backtest

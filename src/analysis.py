@@ -40,10 +40,11 @@ def zscore(series: pd.Series, window: int | None = None) -> pd.Series:
 @dataclass
 class Nowcast:
     r_levels: float  # corr of YoY levels — inflated by shared (co-trending) recovery
-    r_mom_growth: float  # corr of month-over-month growth — honest co-movement on CHANGES
-    r_mom_p: float  # p-value of the MoM-growth correlation
-    r_mom_n: int  # sample size for the MoM-growth correlation
-    r_diff_yoy: float  # corr of differenced YoY — strictest change-on-change measure
+    r_mom_growth: float  # corr of raw MoM growth — inflated by shared seasonality
+    r_deseason: float  # corr of DESEASONALIZED MoM growth — the honest headline read
+    r_deseason_p: float  # p-value of the deseasonalized-MoM correlation
+    r_deseason_n: int  # sample size for the deseasonalized-MoM correlation
+    r_diff_yoy: float  # corr of differenced YoY — strictest (noisy) change-on-change measure
     best_lag_months: int
     best_r: float
     table: pd.DataFrame
@@ -67,15 +68,33 @@ def _lag_correlation_table(tsa_y: pd.Series, dem_y: pd.Series, max_lag: int) -> 
     return pd.DataFrame(rows).set_index("lag_months")
 
 
-def _robust_corrs(tsa_m, dem_m, tsa_y, dem_y) -> tuple[float, float, int, float]:
+def _deseason(s: pd.Series) -> pd.Series:
+    """MoM growth with the calendar-month seasonal mean removed."""
+    g = s.pct_change()
+    months = pd.PeriodIndex(g.index).month
+    return g.groupby(months).transform(lambda x: x - x.mean())
+
+
+def _robust_corrs(tsa_m, dem_m, tsa_y, dem_y) -> tuple[float, float, float, int, float]:
     """Co-movement on CHANGES, not co-trending levels.
 
-    Returns (MoM-growth r, MoM-growth p, MoM n, differenced-YoY r).
+    Returns (raw-MoM r, deseasonalized-MoM r, deseasonalized-MoM p, deseason n, differenced-YoY r).
+    The deseasonalized read is the honest headline: both series peak in summer, so raw MoM
+    is inflated by shared seasonality.
     """
-    g = pd.concat([tsa_m.pct_change().rename("t"), dem_m.pct_change().rename("d")], axis=1).dropna()
+    raw = pd.concat(
+        [tsa_m.pct_change().rename("t"), dem_m.pct_change().rename("d")], axis=1
+    ).dropna()
+    ds = pd.concat([_deseason(tsa_m).rename("t"), _deseason(dem_m).rename("d")], axis=1).dropna()
     d = pd.concat([tsa_y.diff().rename("t"), dem_y.diff().rename("d")], axis=1).dropna()
-    r_mom, p_mom = stats.pearsonr(g["t"], g["d"])
-    return float(r_mom), float(p_mom), int(len(g)), float(d["t"].corr(d["d"]))
+    r_ds, p_ds = stats.pearsonr(ds["t"], ds["d"])
+    return (
+        float(raw["t"].corr(raw["d"])),
+        float(r_ds),
+        float(p_ds),
+        int(len(ds)),
+        float(d["t"].corr(d["d"])),
+    )
 
 
 def demand_nowcast(tsa_daily: pd.Series, accom_emp: pd.Series, max_lag: int = 6) -> Nowcast:
@@ -90,12 +109,13 @@ def demand_nowcast(tsa_daily: pd.Series, accom_emp: pd.Series, max_lag: int = 6)
     table = _lag_correlation_table(tsa_y, dem_y, max_lag)
     r_by_lag = table["r"]
     best = int(r_by_lag.abs().idxmax())
-    r_mom, p_mom, n_mom, r_dy = _robust_corrs(tsa_m, dem_m, tsa_y, dem_y)
+    r_mom, r_ds, p_ds, n_ds, r_dy = _robust_corrs(tsa_m, dem_m, tsa_y, dem_y)
     return Nowcast(
         r_levels=float(r_by_lag.loc[0]),
         r_mom_growth=r_mom,
-        r_mom_p=p_mom,
-        r_mom_n=n_mom,
+        r_deseason=r_ds,
+        r_deseason_p=p_ds,
+        r_deseason_n=n_ds,
         r_diff_yoy=r_dy,
         best_lag_months=best,
         best_r=float(r_by_lag.loc[best]),

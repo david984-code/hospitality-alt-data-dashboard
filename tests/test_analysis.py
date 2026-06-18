@@ -42,7 +42,8 @@ def test_demand_nowcast_perfect_coincidence():
     nc = analysis.demand_nowcast(tsa_daily, accom_emp, max_lag=6)
     assert nc.r_levels > 0.99
     assert nc.r_mom_growth > 0.99  # identical series correlate on changes too
-    assert nc.r_mom_n > 0 and nc.r_mom_p < 0.05  # n and significance reported
+    assert nc.r_deseason > 0.99  # deseasonalized headline read also ~1 for identical series
+    assert nc.r_deseason_n > 0 and nc.r_deseason_p < 0.05  # n and significance reported
     assert nc.best_lag_months == 0
     assert nc.best_r > 0.99
     assert "r" in nc.table.columns

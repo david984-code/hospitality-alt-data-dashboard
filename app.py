@@ -61,14 +61,14 @@ with st.sidebar.expander("Methodology & data proxies"):
 # ----------------------------------------------------------------------------- header
 st.title("Hospitality Alt-Data Dashboard")
 st.markdown(
-    "**A real-time read on US lodging demand from free alternative data — to get the number on "
-    f"the hotel franchisors ({', '.join(config.TICKERS)}) before the Street, ahead of quarterly "
-    "prints.**"
+    "**A structured, reproducible read on US lodging demand from free alternative data — a "
+    f"name-level monitoring tool for the hotel franchisors ({', '.join(config.TICKERS)}) between "
+    "earnings.**"
 )
 st.caption(
-    "TSA throughput (primary) + BLS hospitality labor + Google Trends. The systematic overlay "
-    "in §3 is a risk-management study on top of that read — not the headline. "
-    "Research / monitoring tool, not investment advice."
+    "TSA throughput (primary) + BLS hospitality labor + Google Trends. Not an information edge "
+    "(TSA is widely watched) — a reproducible read. The systematic overlay in §3 is a "
+    "risk-management study, not the headline. Research / monitoring tool, not investment advice."
 )
 
 # ----------------------------------------------------------------------------- 1. NOWCAST (lead)
@@ -100,29 +100,25 @@ with left:
     )
     st.plotly_chart(fig, width="stretch")
 with right:
-    p_txt = "p < 0.001" if nc.r_mom_p < 0.001 else f"p = {nc.r_mom_p:.3f}"
+    p_txt = "p < 0.001" if nc.r_deseason_p < 0.001 else f"p = {nc.r_deseason_p:.3f}"
     st.metric(
-        "TSA–demand co-movement (MoM growth)",
-        f"r = {nc.r_mom_growth:.2f}",
-        delta=f"n = {nc.r_mom_n}, {p_txt}",
+        "TSA–demand co-movement (deseasonalized)",
+        f"r = {nc.r_deseason:.2f}",
+        delta=f"n = {nc.r_deseason_n}, {p_txt}",
         delta_color="off",
-        help="Correlation of month-over-month growth — the honest co-movement, on CHANGES.",
+        help="MoM growth with the calendar-month seasonal mean removed — the honest read.",
     )
-    cc_a, cc_b = st.columns(2)
-    cc_a.metric(
-        "Levels of YoY",
-        f"r = {nc.r_levels:.2f}",
-        help="Inflated — both series co-trend out of COVID.",
-    )
-    cc_b.metric(
-        "Differenced YoY", f"r = {nc.r_diff_yoy:.2f}", help="Strictest change-on-change measure."
-    )
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Raw MoM", f"{nc.r_mom_growth:.2f}", help="Inflated by shared summer seasonality.")
+    s2.metric("Levels YoY", f"{nc.r_levels:.2f}", help="Inflated — both co-trend out of COVID.")
+    s3.metric("Diff'd YoY", f"{nc.r_diff_yoy:.2f}", help="Strictest but noisy; not significant.")
     st.caption(
-        f"TSA and hotel demand genuinely co-move, measured **on changes**: MoM-growth "
-        f"r = {nc.r_mom_growth:.2f} (n = {nc.r_mom_n}, {p_txt} — significant). The "
-        f"'r = {nc.r_levels:.2f}' often quoted is **inflated by co-trending** (both climb out of "
-        "the 2020 hole together). TSA's real value is **timeliness** — it prints in 1–2 days vs "
-        "weeks for BLS and a quarter for earnings — not a near-perfect fit."
+        f"Both travel and hotel staffing peak in summer, so the honest read **strips seasonality**: "
+        f"deseasonalized monthly co-movement **r = {nc.r_deseason:.2f}** ({p_txt}, n = "
+        f"{nc.r_deseason_n}) — moderate. For contrast, raw MoM {nc.r_mom_growth:.2f} is seasonally "
+        f"inflated, levels-of-YoY {nc.r_levels:.2f} is co-trend inflated, and differenced-YoY "
+        f"{nc.r_diff_yoy:.2f} is noisier (not significant). The economic link is real; TSA's value "
+        "is **timeliness** (1–2 day lag vs weeks/quarter), not a tight monthly fit."
     )
     with st.expander("Lead-lag table"):
         st.dataframe(nc.table.round(3), width="stretch")
@@ -191,7 +187,9 @@ r1.metric(
 r2.metric(
     "Deployed Sharpe",
     f"{dep['sharpe']:.1f}",
-    help="Annualized, over invested months only. Small n → wide CI (shown below).",
+    delta=f"95% CI [{dep['sharpe_lo']:.1f}, {dep['sharpe_hi']:.1f}]",
+    delta_color="off",
+    help="Annualized, invested months only. Wide CI from small n — read as indicative, not precise.",
 )
 r3.metric(
     "Max drawdown",
@@ -245,21 +243,23 @@ if res.stress is not None:
         )
         st.plotly_chart(sfig, width="stretch")
     st.caption(
-        f"Through the COVID crash the demand gate cut the worst drawdown from "
-        f"{sb['max_drawdown']:.0%} to {ss['max_drawdown']:.0%}. **No look-ahead:** the gate was "
-        "already OFF for March/April-2020 exposure off *February's* TSA reading (YoY had "
-        "decelerated, accel ≈ −3.1), so it sat out the −34% crash on month-*t* data only and "
-        "re-entered in May. The overlay's worst drawdown is actually Aug-2022, not COVID. Caveat: "
-        "COVID is a single event and 2020-21 YoY math is noisy."
+        f"Through COVID the **parameter-free** gate (fixed accel > 0, the same rule used "
+        f"everywhere — not COVID-tuned) held the worst drawdown to {ss['max_drawdown']:.0%} vs "
+        f"{sb['max_drawdown']:.0%}. **No look-ahead:** it was already OFF for Mar/Apr-2020 off "
+        "*February's* decelerating TSA (accel ≈ −3.1), so it sat out the −34% crash on month-*t* "
+        "data only. **Read it modestly:** going to cash when acceleration craters is near-mechanical "
+        "and this is a single crash — it shows the gate fires *sensibly*, not predictive skill. "
+        "(Overlay's own worst drawdown is Aug-2022, not COVID.)"
     )
 
 st.caption(
     f"**Does the gate actually help?** The test that matters — gate-ON vs gate-OFF months — is "
     f"{pval_label(sig.gate_p)}: it **does not clear the 5% bar** ({sig.gate_on_mean:+.1f}% vs "
-    f"{sig.gate_off_mean:+.1f}%/mo over {sig.n_months} signal-on months). The flattering "
-    f"per-position p≈{sig.naive_p:.2f} overstates it (positions within a month are correlated). "
-    "Treat the edge as **suggestive, not established** — and several signal/universe configs were "
-    "explored, so borderline p-values deserve extra skepticism (multiple testing)."
+    f"{sig.gate_off_mean:+.1f}%/mo over {sig.n_months} signal-on months). The per-position "
+    f"p≈{sig.naive_p:.2f} overstates it (positions within a month are correlated). The gate "
+    "*threshold* is parameter-free, but choosing YoY-acceleration as the gate and top-2 brand "
+    f"momentum as sizing are researcher choices — so on ~{sig.n_months} months treat p≈{sig.gate_p:.2f} "
+    "as **'fails at 5%, likely worse out-of-sample'**, not a near-miss."
 )
 
 st.markdown("**Out-of-sample validation** — signal on names it was never tuned on")
