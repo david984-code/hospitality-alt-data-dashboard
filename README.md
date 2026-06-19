@@ -29,7 +29,7 @@ overlay* further down is a risk-management study **on top of** that read, not th
 | Does the gate help? (the test that matters) | gate-ON vs gate-OFF **p ≈ 0.09 — fails at 5%**, likely worse out-of-sample. (Per-position p ≈ 0.03 overstates it: positions within a month are correlated.) |
 | **COVID stress test** (full 2019+ history) | parameter-free gate held max drawdown to **−11% vs −44%** for always-long, with no look-ahead — but this is *near-mechanical* (cash when acceleration craters) and a single crash: it shows the gate fires sensibly, not predictive skill. |
 | Risk overlay — return on **deployed** capital (2022+) | when invested (~30% of months): mean ≈ **+3.3%/invested-month**, deployed Sharpe ≈ 2.0 but with a wide **95% CI ≈ [0.2, 3.8]** (small n). Realized total-capital return ≈ **13%/yr vs always-long's ≈ 15%/yr** — *below*, from cash drag. |
-| Out-of-sample, pooled 20-name universe | hit = P(next-month up \| gate ON): franchisors ~68% vs ~58% base, REITs ~63% vs ~52%. **Wilson CIs are wide and optimistic** — name-months are correlated, so effective N ≈ the # of signal-on months (~16), not the raw n. Pooled linear r ≈ 0.12 (near-noise); directional, not independently significant. |
+| Out-of-sample, pooled 20-name universe | hit = P(next-month up \| gate ON): franchisors ~68% vs ~58% base, REITs ~63% vs ~52%. **95% CIs (computed on the ~16 effective months, since name-months are correlated) are wide and overlap the base rate** → directional, not significant. Pooled linear r ≈ 0.12 (near-noise). |
 
 > Numbers are a nowcast and move with each data refresh; the figures above are the
 > reproducible output of `uv run python -m src.pipeline` on the date noted.
@@ -81,8 +81,9 @@ an honest appendix. Everything here is computed by the code and shown with its c
   gate metric (YoY acceleration), threshold sign, traded-universe size (3→6), sizing (top-2 vs
   equal-weight), hold (1 month), study window (2019/2022). Not a broad grid search, but enough
   that **the gate-help p ≈ 0.09 should be read as "fails at 5%, likely worse out-of-sample,"**
-  not a near-miss. The pooled-universe hit rates carry Wilson CIs that are *optimistic* (their
-  effective N is the # of signal-on months, not the raw name-month count).
+  not a near-miss. The pooled-universe hit rates carry Wilson CIs **computed on the effective N**
+  (distinct signal-on months, since name-months are correlated) — so the published interval is
+  the honest, wider one, and it overlaps the base rate.
 - This is a **research / monitoring tool, not investment advice.**
 
 ## Layout

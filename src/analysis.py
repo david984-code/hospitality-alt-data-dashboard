@@ -244,8 +244,8 @@ class PooledValidation:
     baseline_hit: float
     baseline_mean: float
     n_obs: int
-    hit_ci: tuple[float, float]  # Wilson 95% CI on signal_on_hit (optimistic — see note)
-    n_eff: int  # effective N ≈ distinct signal-on months (name-months are correlated)
+    hit_ci: tuple[float, float]  # Wilson 95% CI on signal_on_hit, computed on EFFECTIVE N
+    n_eff: int  # effective N = distinct signal-on months (name-months are correlated)
 
 
 def _wilson_ci(p: float, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -274,6 +274,7 @@ def pooled_validation(universe_prices: pd.DataFrame, tsa_daily: pd.Series) -> Po
     D = pd.concat(frames)
     on = D[D["s"] > 0]
     hit = float((on["r"] > 0).mean())
+    n_eff = int(on.index.nunique())  # distinct signal-on months (the independent unit)
     return PooledValidation(
         pooled_r=float(D["s"].corr(D["r"])),
         signal_on_hit=hit,
@@ -281,8 +282,8 @@ def pooled_validation(universe_prices: pd.DataFrame, tsa_daily: pd.Series) -> Po
         baseline_hit=float((D["r"] > 0).mean()),
         baseline_mean=float(D["r"].mean()),
         n_obs=int(len(on)),
-        hit_ci=_wilson_ci(hit, len(on)),
-        n_eff=int(on.index.nunique()),
+        hit_ci=_wilson_ci(hit, n_eff),  # CI on effective N — the honest (wider) width
+        n_eff=n_eff,
     )
 
 

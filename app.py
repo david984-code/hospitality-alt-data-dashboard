@@ -271,24 +271,23 @@ vr = analysis.pooled_validation(res.universe_prices[reit_cols], res.tsa)
 v1.metric(
     f"Franchisors ({len(fr_cols)})",
     f"{vf.signal_on_hit:.0%} up",
-    delta=f"vs {vf.baseline_hit:.0%} base · n={vf.n_obs} (~{vf.n_eff} mo)",
+    delta=f"95% CI [{vf.hit_ci[0]:.0%}, {vf.hit_ci[1]:.0%}] · base {vf.baseline_hit:.0%}",
     delta_color="off",
-    help=f"95% CI [{vf.hit_ci[0]:.0%}, {vf.hit_ci[1]:.0%}] — optimistic; effective N ≈ {vf.n_eff} months.",
+    help=f"CI on effective N = {vf.n_eff} signal-on months (name-months are correlated).",
 )
 v2.metric(
     f"Hotel REITs ({len(reit_cols)})",
     f"{vr.signal_on_hit:.0%} up",
-    delta=f"vs {vr.baseline_hit:.0%} base · n={vr.n_obs} (~{vr.n_eff} mo)",
+    delta=f"95% CI [{vr.hit_ci[0]:.0%}, {vr.hit_ci[1]:.0%}] · base {vr.baseline_hit:.0%}",
     delta_color="off",
-    help=f"95% CI [{vr.hit_ci[0]:.0%}, {vr.hit_ci[1]:.0%}] — optimistic; effective N ≈ {vr.n_eff} months.",
+    help=f"CI on effective N = {vr.n_eff} signal-on months (name-months are correlated).",
 )
 st.caption(
-    "**Metric:** hit rate = P(next-month total return > 0 | gate ON), pooled across each bucket's "
-    f"name-months (CIs in tooltips), vs the unconditional base rate. Points the right way in "
-    "**both** business models — but the Wilson CIs are **optimistic**: name-months within a month "
-    f"are correlated, so effective N ≈ {vf.n_eff}–{vr.n_eff} months, not the raw n. The pooled "
-    f"linear correlation is near-noise (r≈{vf.pooled_r:+.2f}/{vr.pooled_r:+.2f}) — directional, "
-    "not linear, and not independently significance-tested."
+    "**Metric:** hit rate = P(next-month total return > 0 | gate ON), vs the unconditional base "
+    "rate. Points the right way in **both** business models, but the **95% CIs (computed on the "
+    f"~{vf.n_eff} effective months, not raw name-months) are wide and overlap the base rate** — "
+    f"so this is directional, not significant. Pooled linear r ≈ {vf.pooled_r:+.2f}/"
+    f"{vr.pooled_r:+.2f} (near-noise)."
 )
 
 with st.expander("📅 When was the gate ON? — signal history & realized returns", expanded=True):
