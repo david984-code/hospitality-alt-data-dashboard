@@ -244,11 +244,24 @@ class PooledValidation:
     baseline_hit: float
     baseline_mean: float
     n_obs: int
+    hit_ci: tuple[float, float]  # Wilson 95% CI on signal_on_hit (optimistic — see note)
+    n_eff: int  # effective N ≈ distinct signal-on months (name-months are correlated)
+
+
+def _wilson_ci(p: float, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson 95% CI for a proportion."""
+    if n == 0:
+        return (float("nan"), float("nan"))
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return (float(center - half), float(center + half))
 
 
 def pooled_validation(universe_prices: pd.DataFrame, tsa_daily: pd.Series) -> PooledValidation:
-    """Out-of-sample-ish check: pool the TSA-acceleration -> 1m-forward-return
-    relationship across the full lodging universe (more independent-ish obs)."""
+    """Out-of-sample-ish check: pool the TSA-acceleration -> 1m-forward-return relationship
+    across the lodging universe. Name-months within a month are cross-sectionally correlated,
+    so the Wilson CI is optimistic — effective N is closer to the # of distinct signal-on months."""
     tsa_m = _to_period(tsa_daily.resample("ME").mean())
     tsa_accel = (yoy(tsa_m, 12)).diff()
     pm = _to_period(universe_prices.resample("ME").last())
@@ -260,13 +273,16 @@ def pooled_validation(universe_prices: pd.DataFrame, tsa_daily: pd.Series) -> Po
     ]
     D = pd.concat(frames)
     on = D[D["s"] > 0]
+    hit = float((on["r"] > 0).mean())
     return PooledValidation(
         pooled_r=float(D["s"].corr(D["r"])),
-        signal_on_hit=float((on["r"] > 0).mean()),
+        signal_on_hit=hit,
         signal_on_mean=float(on["r"].mean()),
         baseline_hit=float((D["r"] > 0).mean()),
         baseline_mean=float(D["r"].mean()),
         n_obs=int(len(on)),
+        hit_ci=_wilson_ci(hit, len(on)),
+        n_eff=int(on.index.nunique()),
     )
 
 

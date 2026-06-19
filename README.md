@@ -28,8 +28,8 @@ overlay* further down is a risk-management study **on top of** that read, not th
 | **Nowcast** — how closely does TSA track the hotel-demand proxy, *net of seasonality*? | **Deseasonalized MoM r ≈ 0.41 (p ≈ 0.003, n ≈ 52)** — moderate. Context: raw MoM 0.55 (seasonally inflated, both peak in summer); levels-of-YoY 0.92 (co-trend inflated); differenced-YoY 0.25 (noisy, not significant). |
 | Does the gate help? (the test that matters) | gate-ON vs gate-OFF **p ≈ 0.09 — fails at 5%**, likely worse out-of-sample. (Per-position p ≈ 0.03 overstates it: positions within a month are correlated.) |
 | **COVID stress test** (full 2019+ history) | parameter-free gate held max drawdown to **−11% vs −44%** for always-long, with no look-ahead — but this is *near-mechanical* (cash when acceleration craters) and a single crash: it shows the gate fires sensibly, not predictive skill. |
-| Risk overlay — return on **deployed** capital (2022+) | when invested (~30% of months): mean ≈ **+3.3%/invested-month**, deployed Sharpe ≈ 2.0 but with a wide **95% CI ≈ [0.2, 3.8]** (small n). Realized total-capital return ≈ 13%/yr — *below* always-long (cash drag). |
-| Out-of-sample, pooled 20-name universe | hit rate = P(next-month up \| gate ON): franchisors ~68% vs ~58% base; REITs ~63% vs ~52%. Pooled linear r ≈ 0.12 (near-noise) — directional, not linear. |
+| Risk overlay — return on **deployed** capital (2022+) | when invested (~30% of months): mean ≈ **+3.3%/invested-month**, deployed Sharpe ≈ 2.0 but with a wide **95% CI ≈ [0.2, 3.8]** (small n). Realized total-capital return ≈ **13%/yr vs always-long's ≈ 15%/yr** — *below*, from cash drag. |
+| Out-of-sample, pooled 20-name universe | hit = P(next-month up \| gate ON): franchisors ~68% vs ~58% base, REITs ~63% vs ~52%. **Wilson CIs are wide and optimistic** — name-months are correlated, so effective N ≈ the # of signal-on months (~16), not the raw n. Pooled linear r ≈ 0.12 (near-noise); directional, not independently significant. |
 
 > Numbers are a nowcast and move with each data refresh; the figures above are the
 > reproducible output of `uv run python -m src.pipeline` on the date noted.
@@ -61,8 +61,9 @@ an honest appendix. Everything here is computed by the code and shown with its c
 - **Correlation, measured net of seasonality.** Both TSA and hotel staffing peak in summer,
   so raw MoM growth (r ≈ 0.55) is seasonally inflated and levels-of-YoY (r ≈ 0.92) is
   co-trend inflated. The honest read is **deseasonalized MoM r ≈ 0.41 (p ≈ 0.003)**;
-  differenced-YoY (0.25) over-corrects into noise (not significant). The economic link is
-  real but moderate at monthly frequency — TSA's value is timeliness, not a tight fit.
+  differenced-YoY (0.25) over-corrects into noise (not significant). Note deseasonalizing
+  spends ~12 df (one calendar-month mean each), so the effective df behind 0.41 is ~39, not
+  ~52 — the p is mildly optimistic but the result holds. TSA's value is timeliness, not a tight fit.
 - **Signal → execution rule (no look-ahead).** The gate uses month-*t* TSA (published within
   ~1–2 days of month-end) to set exposure for month *t+1*; backtest returns are strictly
   next-month. Employment/PPI are descriptive only and never enter the trade rule.
@@ -76,9 +77,12 @@ an honest appendix. Everything here is computed by the code and shown with its c
   gate fires sensibly, not predictive skill.
 - **Small sample / correlated cross-section / researcher degrees of freedom.** ~16 signal-on
   months; the 2 names held in a month move together, so effective N ≈ months, not positions.
-  The gate *threshold* is parameter-free, but choosing YoY-acceleration as the gate and top-2
-  brand momentum as sizing are researcher choices — so **treat the gate-help p ≈ 0.09 as
-  "fails at 5%, likely worse out-of-sample,"** not a near-miss.
+  The gate *threshold* is parameter-free, but a handful (~5–6) of design forks were explored —
+  gate metric (YoY acceleration), threshold sign, traded-universe size (3→6), sizing (top-2 vs
+  equal-weight), hold (1 month), study window (2019/2022). Not a broad grid search, but enough
+  that **the gate-help p ≈ 0.09 should be read as "fails at 5%, likely worse out-of-sample,"**
+  not a near-miss. The pooled-universe hit rates carry Wilson CIs that are *optimistic* (their
+  effective N is the # of signal-on months, not the raw name-month count).
 - This is a **research / monitoring tool, not investment advice.**
 
 ## Layout

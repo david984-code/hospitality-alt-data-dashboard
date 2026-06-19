@@ -163,9 +163,12 @@ def _validation_summary(validation) -> dict:
         "universe": config.UNIVERSE,
         "pooled_r": round(validation.pooled_r, 3),
         "signal_on_hit": round(validation.signal_on_hit, 3),
+        "signal_on_hit_ci": [round(c, 3) for c in validation.hit_ci],
         "signal_on_mean_pct": round(validation.signal_on_mean, 3),
         "baseline_hit": round(validation.baseline_hit, 3),
         "n_obs": validation.n_obs,
+        "n_eff_months": validation.n_eff,
+        "note": "Wilson CI is optimistic; effective N ≈ n_eff_months (name-months are correlated)",
     }
 
 

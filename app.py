@@ -271,20 +271,24 @@ vr = analysis.pooled_validation(res.universe_prices[reit_cols], res.tsa)
 v1.metric(
     f"Franchisors ({len(fr_cols)})",
     f"{vf.signal_on_hit:.0%} up",
-    delta=f"{(vf.signal_on_hit - vf.baseline_hit):+.0%} vs base rate",
-    help="Asset-light brands incl. MAR/HLT/H/WH/CHH/IHG + timeshares HGV/VAC/TNL.",
+    delta=f"vs {vf.baseline_hit:.0%} base · n={vf.n_obs} (~{vf.n_eff} mo)",
+    delta_color="off",
+    help=f"95% CI [{vf.hit_ci[0]:.0%}, {vf.hit_ci[1]:.0%}] — optimistic; effective N ≈ {vf.n_eff} months.",
 )
 v2.metric(
     f"Hotel REITs ({len(reit_cols)})",
     f"{vr.signal_on_hit:.0%} up",
-    delta=f"{(vr.signal_on_hit - vr.baseline_hit):+.0%} vs base rate",
-    help="Own the real estate: HST/PK/RHP/APLE/DRH/PEB/SHO/XHR/RLJ/INN.",
+    delta=f"vs {vr.baseline_hit:.0%} base · n={vr.n_obs} (~{vr.n_eff} mo)",
+    delta_color="off",
+    help=f"95% CI [{vr.hit_ci[0]:.0%}, {vr.hit_ci[1]:.0%}] — optimistic; effective N ≈ {vr.n_eff} months.",
 )
 st.caption(
     "**Metric:** hit rate = P(next-month total return > 0 | gate ON), pooled across each bucket's "
-    "name-months, vs the unconditional base rate. The effect points the right way in **both** "
-    "business models (franchisors are fee/growth, REITs rate/RevPAR), but the pooled linear "
-    f"correlation is near-noise (r≈{vf.pooled_r:+.2f}/{vr.pooled_r:+.2f}) — directional, not linear."
+    f"name-months (CIs in tooltips), vs the unconditional base rate. Points the right way in "
+    "**both** business models — but the Wilson CIs are **optimistic**: name-months within a month "
+    f"are correlated, so effective N ≈ {vf.n_eff}–{vr.n_eff} months, not the raw n. The pooled "
+    f"linear correlation is near-noise (r≈{vf.pooled_r:+.2f}/{vr.pooled_r:+.2f}) — directional, "
+    "not linear, and not independently significance-tested."
 )
 
 with st.expander("📅 When was the gate ON? — signal history & realized returns", expanded=True):
