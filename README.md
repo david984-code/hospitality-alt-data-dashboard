@@ -150,3 +150,14 @@ Schedule it weekly either way:
   and `NOTIFY_TO` as repo secrets. State persists across runs via the actions cache.
 - **Windows Task Scheduler** — weekly trigger running
   `uv run python -m src.notify` in this folder (with the `.env` values exported).
+
+## Part of a series
+
+A free-data **consumer subsector reader** built to a consistent honest-numbers bar
+(validated signals + openly-reported nulls + a ruff/mypy/pytest CI gate):
+
+- **Lodging (this repo)** — TSA / BLS / Trends → hotel-franchisor demand (MAR/HLT/H).
+- [Consumer-Gig-Nowcast](https://github.com/david984-code/Consumer-Gig-Nowcast)
+  — NYC TLC trips → Uber Mobility GB growth (OOS r≈0.98).
+- [Airlines-Alt-Data-Nowcast](https://github.com/david984-code/Airlines-Alt-Data-Nowcast)
+  — TSA throughput → carrier RPM growth (OOS r≈0.93–0.97).
