@@ -161,3 +161,5 @@ A free-data **consumer subsector reader** built to a consistent honest-numbers b
   — NYC TLC trips → Uber Mobility GB growth (OOS r≈0.98).
 - [Airlines-Alt-Data-Nowcast](https://github.com/david984-code/Airlines-Alt-Data-Nowcast)
   — TSA throughput → carrier RPM growth (OOS r≈0.93–0.97).
+- [Macau-Gaming-Nowcast](https://github.com/david984-code/Macau-Gaming-Nowcast)
+  — Macau GGR → casino operator revenue.
