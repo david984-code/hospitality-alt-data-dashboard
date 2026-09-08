@@ -16,3 +16,6 @@ outputs/
 .mypy_cache/
 .ruff_cache/
 .env
+
+# Files the Claude desktop app drops into the folder
+Claude outputs/
