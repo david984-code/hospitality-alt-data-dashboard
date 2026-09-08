@@ -13,6 +13,7 @@ dependencies = [
     "pytrends>=4.9",
     "streamlit>=1.30",
     "plotly>=5.18",
+    "matplotlib>=3.8",
     "tenacity>=8.2",
     "scipy>=1.17.1",
 ]

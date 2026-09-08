@@ -10,13 +10,16 @@ Core finding (computed on 2022-2026 data):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
 import config
+from src.data.revpar_reported import REPORTED_TICKERS
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -563,3 +566,272 @@ def earnings_search_study(
         high_search_hit=float((hi["reaction_pct"] > 0).mean()) if len(hi) else float("nan"),
         n=len(ev),
     )
+
+
+# ------------------------------------------- composite demand index vs reported RevPAR
+# Days after an observation's own timestamp at which that observation actually becomes
+# public. TSA posts the prior day. A Trends observation is stamped at the START of its
+# bucket, so a weekly value is complete 7 days later and a monthly one (which is what
+# Google returns for windows longer than five years) about 35 days later. JOLTS is
+# stamped at the first of the month and released about five weeks after that month
+# ends, so roughly 66 days after the stamp. Each lag is rounded up, never down: being a
+# few days late costs nothing, being early is look-ahead.
+PUBLICATION_LAG_DAYS = {"tsa": 1, "trends_weekly": 7, "trends_monthly": 35, "bls": 66}
+
+
+def _trends_lag_days(trends: pd.DataFrame) -> int:
+    """Weekly or monthly Trends? Decide from the spacing of the observations."""
+    idx = pd.DatetimeIndex(trends.index).sort_values()
+    if len(idx) < 2:
+        return PUBLICATION_LAG_DAYS["trends_monthly"]
+    step = float(np.median(np.diff(idx.values).astype("timedelta64[D]").astype(float)))
+    return (
+        PUBLICATION_LAG_DAYS["trends_weekly"]
+        if step <= 7
+        else PUBLICATION_LAG_DAYS["trends_monthly"]
+    )
+
+
+# Fixed window the three components are rebased on before they are averaged. It sits at
+# the very start of the sample, so the rebasing can never see future data.
+INDEX_BASE_END = "2019-12-31"
+
+# Quarters distorted by the COVID collapse and its base effects. Reported for the chart
+# so a correlation dominated by one -70% shock can be told apart from the rest.
+COVID_START = "2020-01-01"
+COVID_END = "2021-06-30"
+
+# First quarter whose own level AND whose prior-year base are both past the reopening.
+# Q1 2023 was the last quarter with a reopening base (Q1 2022 was omicron-depressed in the
+# US and Greater China only reopened in January 2023, which matters for system-wide
+# RevPAR). From Q2 2023 the reported numbers are back in single digits or low teens, so
+# this is the window where the index has to track ordinary-sized moves, not a crash and
+# its rebound. It is set by date, not by looking at the numbers.
+STEADY_START = "2023-04-01"
+
+
+def _rebased(s: pd.Series, lag_days: int, base_end: str) -> pd.Series:
+    """One index component as a daily, publication-lagged, rebased-to-100 level series."""
+    x = s.dropna().sort_index()
+    x.index = pd.to_datetime(x.index) + pd.Timedelta(days=lag_days)
+    base = x[x.index <= pd.Timestamp(base_end)]
+    denom = float(base.mean()) if len(base) else float(x.mean())
+    return (x / denom * 100.0).resample("D").mean().ffill()
+
+
+def composite_demand_index(
+    tsa_daily: pd.Series,
+    trends: pd.DataFrame,
+    fred_df: pd.DataFrame,
+    base_end: str = INDEX_BASE_END,
+) -> pd.Series:
+    """Daily composite lodging-demand index: TSA throughput, brand search, hospitality hiring.
+
+    Each component is shifted forward by its real publication lag, rebased to 100 on the
+    fixed `base_end` window, and the three are equal-weighted. Because the base window is
+    fixed at the start of the sample and never re-estimated, and because every component
+    is lagged to its release, the value on any date uses only what was public that day.
+
+    The result is a level series (so year-over-year percent change is meaningful), defined
+    only on dates where all supplied components are available — the mix never shifts
+    underneath the series. Components absent from the inputs are simply left out, which is
+    what happens when Google Trends is skipped.
+    """
+    parts = {"tsa": _rebased(tsa_daily, PUBLICATION_LAG_DAYS["tsa"], base_end)}
+    if not trends.empty:
+        parts["search"] = _rebased(trends.mean(axis=1), _trends_lag_days(trends), base_end)
+    if "job_openings" in fred_df.columns:
+        hiring = fred_df["job_openings"]
+        parts["hiring"] = _rebased(hiring, PUBLICATION_LAG_DAYS["bls"], base_end)
+    return pd.concat(parts, axis=1).dropna().mean(axis=1).rename("demand_index")
+
+
+def _quarter_windows(period_ends: pd.DatetimeIndex) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """(start, end] window for each fiscal quarter; the first opens 3 months back."""
+    windows: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    for i, end in enumerate(period_ends):
+        prev = period_ends[i - 1] if i else end - pd.DateOffset(months=3)
+        windows.append((prev + pd.Timedelta(days=1), end))
+    return windows
+
+
+def _prior_year_positions(period_ends: pd.DatetimeIndex, tolerance_days: int = 45) -> list[int]:
+    """For each quarter, the position of the quarter closest to one year earlier, or -1."""
+    out: list[int] = []
+    for i, end in enumerate(period_ends):
+        gaps = np.abs((period_ends - (end - pd.DateOffset(years=1))).days)
+        j = int(np.argmin(gaps))
+        out.append(j if j != i and gaps[j] <= tolerance_days else -1)
+    return out
+
+
+def quarterly_index_yoy(daily_index: pd.Series, period_ends: Sequence[date]) -> pd.DataFrame:
+    """Aggregate the composite demand index to fiscal quarters and take year-over-year.
+
+    A quarter's level is the mean of the daily index over `(previous period_end,
+    period_end]`; the first quarter's window opens three months before its own
+    period_end. Year-over-year is that level against the quarter whose period_end is
+    nearest one year earlier, and NaN when `period_ends` contains no such quarter.
+
+    No look-ahead. A quarter's row is built only from index values dated on or before its
+    own `period_end`, so it is exactly what a reader could have computed the day the
+    quarter closed — nothing dated later, in that quarter or any subsequent one, can
+    change it. Truncating the input series at any period_end leaves every row up to that
+    date identical. `composite_demand_index` separately shifts each input by its
+    publication lag, so "dated on or before" also means "published on or before".
+
+    Returns one row per period_end with `index_level`, `n_days` (daily observations that
+    fell in the window), and `index_yoy` in percent. Check `n_days`: the composite index
+    only starts once its slowest component has been published, so the earliest quarter is
+    usually covered in part, and its level is a mean over fewer days than the rest.
+    """
+    ends = pd.DatetimeIndex(pd.to_datetime(list(period_ends))).normalize().sort_values()
+    s = daily_index.dropna().sort_index()
+    s.index = pd.to_datetime(s.index)
+
+    levels: list[float] = []
+    counts: list[int] = []
+    for start, end in _quarter_windows(ends):
+        window = s[(s.index >= start) & (s.index <= end)]  # `<= end` is the no-look-ahead cut
+        levels.append(float(window.mean()) if len(window) else float("nan"))
+        counts.append(len(window))
+
+    prior = _prior_year_positions(ends)
+    yoy_pct = [
+        (levels[i] / levels[j] - 1.0) * 100.0 if j >= 0 and levels[j] else float("nan")
+        for i, j in enumerate(prior)
+    ]
+    return pd.DataFrame(
+        {"period_end": ends, "index_level": levels, "n_days": counts, "index_yoy": yoy_pct}
+    )
+
+
+@dataclass
+class RevparComparison:
+    """The composite index's quarterly YoY set against reported system-wide RevPAR."""
+
+    table: pd.DataFrame  # period_end, index_yoy, MAR, HLT, H, average, index_direction_correct
+    r: float  # Pearson r, index YoY vs the 3-company average RevPAR YoY
+    p: float
+    n: int
+    r_ex_covid: float  # same, with the COVID quarters dropped — the less shock-driven read
+    n_ex_covid: int
+    hit_rate: float  # share of quarters where the two series moved the same direction
+    n_direction: int
+    r_steady: float  # same r, STEADY_START onward only: no crash, no rebound, no base effects
+    p_steady: float
+    n_steady: int
+    r_steady_ci: tuple[float, float]  # 95% Fisher-z interval on r_steady (n is small)
+    hit_rate_steady: float  # direction test restricted to the steady-state window
+    n_direction_steady: int
+
+
+def _pearson(a: pd.Series, b: pd.Series) -> tuple[float, float, int]:
+    both = pd.concat([a.rename("a"), b.rename("b")], axis=1).dropna()
+    if len(both) < 3:
+        return float("nan"), float("nan"), len(both)
+    r, p = stats.pearsonr(both["a"], both["b"])
+    return float(r), float(p), len(both)
+
+
+def _fisher_ci(r: float, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% interval for a Pearson r via the Fisher z transform (NaN when n < 4)."""
+    if not np.isfinite(r) or n < 4 or abs(r) >= 1.0:
+        return float("nan"), float("nan")
+    fz = np.arctanh(r)
+    half = z / np.sqrt(n - 3)
+    return float(np.tanh(fz - half)), float(np.tanh(fz + half))
+
+
+def compare_index_to_reported(daily_index: pd.Series, reported: pd.DataFrame) -> RevparComparison:
+    """Build the per-quarter comparison table and its correlation / hit-rate summary.
+
+    `reported` is the long frame from `src.data.revpar_reported.load_reported_revpar`.
+    The direction test compares the quarter-on-quarter *change* in the index's YoY
+    against the change in the three companies' average reported RevPAR YoY, so it asks
+    whether the index turned the same way the reported numbers turned.
+    """
+    wide = reported.pivot(index="period_end", columns="ticker", values="revpar_yoy_pct")
+    wide = wide.reindex(columns=list(REPORTED_TICKERS)).sort_index()
+
+    quarters = quarterly_index_yoy(daily_index, list(wide.index))
+    table = quarters.set_index("period_end").join(wide)
+    table["average"] = table[list(REPORTED_TICKERS)].mean(axis=1)
+
+    deltas = table[["index_yoy", "average"]].diff()
+    matched = (np.sign(deltas["index_yoy"]) == np.sign(deltas["average"])).astype("boolean")
+    table["index_direction_correct"] = matched.where(deltas.notna().all(axis=1))
+
+    covid = table.index.to_series().between(pd.Timestamp(COVID_START), pd.Timestamp(COVID_END))
+    off_covid = ~covid
+    r, p, n = _pearson(table["index_yoy"], table["average"])
+    r_ex, _, n_ex = _pearson(table.loc[off_covid, "index_yoy"], table.loc[off_covid, "average"])
+    directions = table["index_direction_correct"].dropna()
+
+    steady = table.index >= pd.Timestamp(STEADY_START)
+    r_st, p_st, n_st = _pearson(table.loc[steady, "index_yoy"], table.loc[steady, "average"])
+    directions_st = table.loc[steady, "index_direction_correct"].dropna()
+
+    return RevparComparison(
+        table=table.reset_index(),
+        r=r,
+        p=p,
+        n=n,
+        r_ex_covid=r_ex,
+        n_ex_covid=n_ex,
+        hit_rate=float(directions.mean()) if len(directions) else float("nan"),
+        n_direction=len(directions),
+        r_steady=r_st,
+        p_steady=p_st,
+        n_steady=n_st,
+        r_steady_ci=_fisher_ci(r_st, n_st),
+        hit_rate_steady=float(directions_st.mean()) if len(directions_st) else float("nan"),
+        n_direction_steady=len(directions_st),
+    )
+
+
+def component_diagnostics(
+    tsa_daily: pd.Series,
+    trends: pd.DataFrame,
+    fred_df: pd.DataFrame,
+    reported: pd.DataFrame,
+) -> pd.DataFrame:
+    """Each index component on its own against the 3-company average reported RevPAR YoY.
+
+    A diagnostic, not a re-specification: the index stays equal-weighted whatever this
+    says. It exists so a reader can see which leg carries the fit and which drags it, on
+    the same three windows the headline uses. One row per component plus the composite.
+    """
+    wide = reported.pivot(index="period_end", columns="ticker", values="revpar_yoy_pct")
+    average = wide.reindex(columns=list(REPORTED_TICKERS)).sort_index().mean(axis=1)
+    ends = list(average.index)
+
+    series = {"composite": composite_demand_index(tsa_daily, trends, fred_df)}
+    series["tsa"] = _rebased(tsa_daily, PUBLICATION_LAG_DAYS["tsa"], INDEX_BASE_END)
+    if not trends.empty:
+        series["search"] = _rebased(trends.mean(axis=1), _trends_lag_days(trends), INDEX_BASE_END)
+    if "job_openings" in fred_df.columns:
+        series["hiring"] = _rebased(
+            fred_df["job_openings"], PUBLICATION_LAG_DAYS["bls"], INDEX_BASE_END
+        )
+
+    rows = []
+    for name, daily in series.items():
+        q = quarterly_index_yoy(daily, ends).set_index("period_end")["index_yoy"]
+        covid = q.index.to_series().between(pd.Timestamp(COVID_START), pd.Timestamp(COVID_END))
+        steady = q.index >= pd.Timestamp(STEADY_START)
+        r_all, _, n_all = _pearson(q, average)
+        r_ex, _, n_ex = _pearson(q[~covid], average[~covid])
+        r_st, _, n_st = _pearson(q[steady], average[steady])
+        rows.append(
+            {
+                "component": name,
+                "r_full": r_all,
+                "n_full": n_all,
+                "r_ex_covid": r_ex,
+                "n_ex_covid": n_ex,
+                "r_steady": r_st,
+                "n_steady": n_st,
+            }
+        )
+    return pd.DataFrame(rows).set_index("component")

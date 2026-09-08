@@ -4,6 +4,8 @@ __pycache__/
 venv/
 data/*.csv
 data/*.json
+# Hand-maintained input (not fetched, not regenerable) — keep it in the repo.
+!data/reported_revpar.csv
 st.log
 .DS_Store
 .streamlit/secrets.toml

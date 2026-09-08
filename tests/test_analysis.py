@@ -246,3 +246,205 @@ def test_earnings_search_study():
     assert study.n >= 3
     assert -1.0 <= study.corr <= 1.0
     assert set(study.events.columns) >= {"ticker", "earnings", "pre_search_z", "reaction_pct"}
+
+
+# ------------------------------------------- composite demand index vs reported RevPAR
+
+CALENDAR_QUARTER_ENDS = ["03-31", "06-30", "09-30", "12-31"]
+
+
+def _quarter_ends(years) -> list[pd.Timestamp]:
+    return [pd.Timestamp(f"{y}-{md}") for y in years for md in CALENDAR_QUARTER_ENDS]
+
+
+def test_quarterly_index_yoy_known_step():
+    """A flat 100 through 2019 stepping to 125 through 2020 must give exactly +25% YoY."""
+    days = pd.date_range("2018-10-01", "2020-12-31", freq="D")
+    daily = pd.Series(np.where(days.year >= 2020, 125.0, 100.0), index=days)
+
+    out = analysis.quarterly_index_yoy(daily, _quarter_ends([2019, 2020]))
+
+    assert list(out.columns) == ["period_end", "index_level", "n_days", "index_yoy"]
+    assert len(out) == 8
+    # 2019 levels are flat at 100 with no prior year in period_ends -> YoY is NaN.
+    assert (out["index_level"].head(4) == 100.0).all()
+    assert out["index_yoy"].head(4).isna().all()
+    # 2020 levels are flat at 125 -> exactly +25% against the matching 2019 quarter.
+    assert (out["index_level"].tail(4) == 125.0).all()
+    assert np.allclose(out["index_yoy"].tail(4).to_numpy(), 25.0)
+
+
+def test_quarterly_index_yoy_averages_over_the_quarter():
+    """A 1,2,3,... ramp over Q1 2019 (90 days) has mean (1+90)/2 = 45.5."""
+    days = pd.date_range("2019-01-01", "2019-03-31", freq="D")
+    daily = pd.Series(np.arange(1.0, len(days) + 1.0), index=days)
+
+    out = analysis.quarterly_index_yoy(daily, [pd.Timestamp("2019-03-31")])
+
+    assert out.loc[0, "n_days"] == 90
+    assert out.loc[0, "index_level"] == 45.5
+
+
+def test_quarterly_index_yoy_uses_only_data_up_to_period_end():
+    """Truncating the series at a quarter's close must not move that quarter's row.
+
+    This is the no-look-ahead guarantee: a huge spike immediately after Q2 2020 closes
+    cannot be allowed to leak backwards into Q2 2020 or anything before it.
+    """
+    days = pd.date_range("2019-01-01", "2020-12-31", freq="D")
+    daily = pd.Series(100.0, index=days)
+    contaminated = daily.copy()
+    contaminated[contaminated.index > pd.Timestamp("2020-06-30")] = 10_000.0
+
+    ends = _quarter_ends([2019, 2020])
+    clean = analysis.quarterly_index_yoy(daily, ends)
+    spiked = analysis.quarterly_index_yoy(contaminated, ends)
+
+    through_q2 = slice(0, 6)  # 2019Q1 .. 2020Q2
+    pd.testing.assert_frame_equal(clean.iloc[through_q2], spiked.iloc[through_q2])
+    # ...and the later quarters, which legitimately contain the spike, do move.
+    assert spiked.loc[6, "index_level"] == 10_000.0
+
+
+def test_quarterly_index_yoy_missing_prior_year_is_nan():
+    """No quarter within 45 days of one year earlier -> YoY is NaN, not a wrong number."""
+    days = pd.date_range("2019-01-01", "2021-12-31", freq="D")
+    daily = pd.Series(100.0, index=days)
+    ends = [pd.Timestamp("2019-03-31"), pd.Timestamp("2021-03-31")]  # 2020 skipped
+
+    out = analysis.quarterly_index_yoy(daily, ends)
+    assert out["index_yoy"].isna().all()
+
+
+def _index_inputs(n_days: int = 900):
+    days = pd.date_range("2019-01-01", periods=n_days, freq="D")
+    weeks = pd.date_range("2019-01-06", periods=n_days // 7, freq="W")
+    months = pd.date_range("2019-01-01", periods=n_days // 30, freq="MS")
+    rng = np.random.RandomState(11)
+    tsa = pd.Series(2_000_000 * (1 + rng.normal(0.0003, 0.01, len(days))).cumprod(), index=days)
+    trends = pd.DataFrame({t: rng.uniform(40, 80, len(weeks)) for t in config.TICKERS}, index=weeks)
+    fred = pd.DataFrame({"job_openings": rng.uniform(900, 1200, len(months))}, index=months)
+    return tsa, trends, fred
+
+
+def test_composite_demand_index_is_a_positive_lagged_level_series():
+    tsa, trends, fred = _index_inputs()
+    idx = analysis.composite_demand_index(tsa, trends, fred)
+
+    assert idx.name == "demand_index"
+    assert (idx > 0).all()
+    assert not idx.isna().any()  # defined only where all three components exist
+    # The slowest component (BLS, 66-day publication lag) sets when the index can start.
+    bls_lag = pd.Timedelta(days=analysis.PUBLICATION_LAG_DAYS["bls"])
+    assert idx.index.min() >= fred.index.min() + bls_lag
+
+
+def test_composite_demand_index_drops_absent_components():
+    """Skipping Trends leaves a TSA + hiring index rather than failing."""
+    tsa, _, fred = _index_inputs()
+    idx = analysis.composite_demand_index(tsa, pd.DataFrame(), fred)
+    assert len(idx) > 0 and (idx > 0).all()
+
+
+def _reported_frame(ends, values):
+    rows = [
+        {
+            "ticker": t,
+            "fiscal_quarter": f"Q{e.quarter} {e.year}",
+            "period_end": e,
+            "revpar_yoy_pct": v,
+            "source_url": "https://example.com",
+        }
+        for e, v in zip(ends, values, strict=True)
+        for t in ("MAR", "HLT", "H")
+    ]
+    return pd.DataFrame(rows)
+
+
+def test_compare_index_to_reported_shape_and_direction():
+    days = pd.date_range("2018-10-01", "2021-12-31", freq="D")
+    # A steadily rising index, so its YoY varies quarter to quarter rather than sitting
+    # on a constant (which would make the correlation undefined).
+    daily = pd.Series(100.0 + np.arange(len(days)) * 0.05, index=days)
+    ends = _quarter_ends([2019, 2020, 2021])
+    reported = _reported_frame(ends, np.linspace(-5.0, 15.0, len(ends)))
+
+    cmp = analysis.compare_index_to_reported(daily, reported)
+
+    assert list(cmp.table.columns) == [
+        "period_end",
+        "index_level",
+        "n_days",
+        "index_yoy",
+        "MAR",
+        "HLT",
+        "H",
+        "average",
+        "index_direction_correct",
+    ]
+    assert len(cmp.table) == len(ends)
+    # All three companies carry the same value here, so the average is that value.
+    assert np.allclose(cmp.table["average"], cmp.table["MAR"])
+    # The first quarter has no prior quarter to difference against.
+    assert pd.isna(cmp.table.loc[0, "index_direction_correct"])
+    assert 0.0 <= cmp.hit_rate <= 1.0
+    assert cmp.n_direction == int(cmp.table["index_direction_correct"].notna().sum())
+
+
+def test_trends_publication_lag_follows_the_observation_spacing():
+    weekly = pd.DataFrame(
+        {"MAR": [50.0] * 10}, index=pd.date_range("2019-01-06", periods=10, freq="W")
+    )
+    monthly = pd.DataFrame(
+        {"MAR": [50.0] * 10}, index=pd.date_range("2019-01-01", periods=10, freq="MS")
+    )
+    assert analysis._trends_lag_days(weekly) == analysis.PUBLICATION_LAG_DAYS["trends_weekly"]
+    assert analysis._trends_lag_days(monthly) == analysis.PUBLICATION_LAG_DAYS["trends_monthly"]
+    # A monthly Trends series (what Google returns for a 5-year-plus window) must not be
+    # treated as public a week after the month starts: that would be look-ahead.
+    assert analysis.PUBLICATION_LAG_DAYS["trends_monthly"] > 31
+
+
+def test_steady_state_window_is_a_strict_subset_with_its_own_stats():
+    days = pd.date_range("2018-10-01", "2025-12-31", freq="D")
+    rng = np.random.RandomState(3)
+    daily = pd.Series(100.0 * np.cumprod(1 + rng.normal(0.0002, 0.005, len(days))), index=days)
+    ends = _quarter_ends(range(2019, 2026))
+    reported = _reported_frame(ends, rng.normal(3.0, 4.0, len(ends)))
+
+    cmp = analysis.compare_index_to_reported(daily, reported)
+
+    steady_ends = [e for e in ends if e >= pd.Timestamp(analysis.STEADY_START)]
+    assert cmp.n_steady == len(steady_ends)
+    assert cmp.n_steady < cmp.n_ex_covid < cmp.n
+    assert -1.0 <= cmp.r_steady <= 1.0
+    lo, hi = cmp.r_steady_ci
+    assert lo <= cmp.r_steady <= hi
+    assert cmp.n_direction_steady == cmp.n_steady  # every steady quarter has a prior quarter
+
+
+def test_fisher_ci_brackets_r_and_narrows_with_n():
+    lo_small, hi_small = analysis._fisher_ci(0.5, 10)
+    lo_big, hi_big = analysis._fisher_ci(0.5, 100)
+    assert lo_small < 0.5 < hi_small
+    assert (hi_big - lo_big) < (hi_small - lo_small)
+    assert all(np.isnan(analysis._fisher_ci(0.5, 3)))
+
+
+def test_component_diagnostics_lists_every_leg_and_the_composite():
+    tsa, trends, fred = _index_inputs(n_days=2600)
+    ends = _quarter_ends(range(2019, 2026))
+    reported = _reported_frame(ends, np.linspace(-5.0, 15.0, len(ends)))
+
+    diag = analysis.component_diagnostics(tsa, trends, fred, reported)
+
+    assert list(diag.index) == ["composite", "tsa", "search", "hiring"]
+    assert list(diag.columns) == [
+        "r_full",
+        "n_full",
+        "r_ex_covid",
+        "n_ex_covid",
+        "r_steady",
+        "n_steady",
+    ]
+    assert (diag["n_steady"] <= diag["n_ex_covid"]).all()

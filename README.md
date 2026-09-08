@@ -53,6 +53,7 @@ an honest appendix. Everything here is computed by the code and shown with its c
 | PPI, Traveler Accommodation (monthly) | BLS public API | **RevPAR-rate / ADR proxy.** |
 | Accommodation employment (monthly) | BLS public API (CES) | Hospitality **demand** proxy used for the nowcast. |
 | Equity prices + earnings dates | Yahoo Finance via `yfinance` | MAR/HLT/H + a 20-name validation universe (9 asset-light franchisors + 10 hotel REITs, tested separately). |
+| Reported system-wide RevPAR (quarterly) | MAR / HLT / H earnings releases | **Hand-keyed, not fetched** — `data/reported_revpar.csv`. Feeds only the comparison below; never enters the signal, the backtest, or any number above. |
 
 ### Honest caveats
 - **True RevPAR is STR data (paid).** This project uses BLS Accommodation employment as
@@ -86,19 +87,92 @@ an honest appendix. Everything here is computed by the code and shown with its c
   the honest, wider one, and it overlaps the base rate.
 - This is a **research / monitoring tool, not investment advice.**
 
+## Reported RevPAR comparison
+
+Every correlation above is measured against a BLS-based RevPAR proxy (Accommodation
+employment for demand, PPI Traveler Accommodation for rate) because true RevPAR is STR data
+and STR is paid. This section is the narrower check a hotel analyst would ask for first. It
+sets the free-data series against the RevPAR the companies actually reported, keyed by hand
+from the MAR, HLT and H quarterly releases (system-wide comparable RevPAR, constant currency)
+for Q1 2019 to Q2 2026, with a source URL on every row of `data/reported_revpar.csv`.
+
+Two series are tested. The first is TSA checkpoint throughput on its own, which is the demand
+signal this repo has used since the first commit (the gate is TSA acceleration; brand search
+and hiring only ever fed the anomaly panel). The second is a composite that was built for this
+comparison, an equal-weighted average of TSA, Google brand search for six hotel brands, and
+BLS JOLTS leisure and hospitality job openings, each shifted forward by its publication lag and
+rebased to 100 on 2019. The composite was the new idea. The test is whether it beat TSA alone.
+
+![TSA throughput vs reported RevPAR](docs/index_vs_reported_revpar.png)
+
+Three windows are reported because they answer different questions. The full sample and the
+ex-COVID sample are dominated by the 2020 collapse and the 2021 to early 2023 rebound, when
+every travel series moved together by tens or hundreds of percent, so a high r there says
+nothing about tracking ordinary quarters. The steady-state window starts Q2 2023, the first
+quarter whose own level and whose prior-year base are both past the reopening. It is set by
+date, not by looking at the numbers, and it is the window that matters.
+
+| Series, vs 3-company average reported RevPAR YoY | Full sample (n = 26) | Ex-COVID (n = 20) | Steady state, Q2 2023 onward (n = 13) |
+|---|---|---|---|
+| TSA throughput alone | r = 0.97 | r = 0.95 | **r = 0.77** (p = 0.002, 95% CI 0.38 to 0.93), direction matched 8 of 13 quarters |
+| Composite (TSA + brand search + JOLTS openings) | r = 0.92 | r = 0.96 | **r = -0.14** (p = 0.65, 95% CI -0.64 to 0.45), direction matched 9 of 13 |
+| Brand search alone (diagnostic) | r = 0.89 | r = 0.89 | r = 0.12 |
+| JOLTS openings alone (diagnostic) | r = 0.75 | r = 0.94 | r = -0.30 |
+
+The composite failed. In the steady-state window it ran negative for eight straight quarters
+while reported RevPAR grew low to mid single digits. The per-leg diagnostic shows why. Brand
+search carries no information at this horizon, and JOLTS openings fell from their 2022
+labor-shortage peak through 2025 while RevPAR rose, so that leg pulls the average the wrong
+way. Averaging one signal with two non-signals produced a non-signal. The composite is kept
+in the code and on the chart as a dashed line because it was tried, and hiding a failed
+specification is the thing this README is written to avoid.
+
+TSA alone tracks the level of RevPAR growth in the steady-state window. It does not track
+every quarterly turn (8 of 13 directions matched, which is close to a coin flip), and the
+interval on 0.77 runs down to 0.38 because thirteen quarters is a small sample. Read it as
+plausible, not tight. The most recent two quarters also diverge: TSA was roughly flat year on
+year in Q1 and Q2 2026 while system-wide RevPAR grew about 4.4 percent. Volume did not deliver
+that growth, rate did, and TSA has no rate leg. That is a limit of the series, not a rounding
+error, and it is the kind of gap a hotel analyst will notice first.
+
+Three more caveats hold whatever the numbers say.
+- n is 26 at most, not 30, because TSA data is public only from 2019, so the 2019 quarters
+  have no year-earlier base.
+- The three companies' RevPAR series are highly correlated with each other, so the effective
+  sample is the quarter count, not three times it. The average of the three is the comparison
+  target for that reason.
+- The index is US-only and reported RevPAR is system-wide, roughly 70 to 80 percent US for MAR
+  and HLT and less for Hyatt. System-wide was used because Hyatt only reports a clean US-only
+  RevPAR from 2024, so it is the only series with a consistent 30-quarter history for all three.
+
+No look-ahead. Every input is shifted forward to the date it became public (TSA one day,
+monthly Google Trends 35 days, JOLTS 66 days), the 2019 rebasing window is fixed at the start
+of the sample, and `analysis.quarterly_index_yoy` builds each quarter only from values dated on
+or before that quarter's period end. Truncating the daily series at any period end leaves every
+earlier row unchanged, and that property is tested.
+
+```bash
+uv run python -m scripts.make_kopelman_table   # outputs/index_vs_reported_revpar.csv, tsa_vs_reported_revpar.csv, index_components_vs_reported_revpar.csv
+uv run python -m scripts.make_kopelman_chart   # outputs/index_vs_reported_revpar.png, TSA bold, composite dashed (copy to docs/ to refresh the README image)
+uv run python -m scripts.make_kopelman_chart --index composite   # the composite as the bold line instead
+```
+
 ## Layout
 
 ```
 config.py            tickers, universe, BLS series IDs, paths
 src/data/            tsa.py  trends.py  bls.py  prices.py  cache.py  net.py (retry policy)
-src/analysis.py      nowcast, signals, backtest, significance, risk, stress, earnings study
+                     revpar_reported.py  hand-keyed company RevPAR, schema-checked on load
+src/analysis.py      nowcast, signals, backtest, significance, risk, stress, earnings study,
+                     composite demand index + reported-RevPAR comparison
 src/pipeline.py      orchestrates fetch -> analyze -> outputs/
 src/notify.py        weekly regime-change email watcher
 app.py               Streamlit dashboard
-tests/               pytest unit tests (analysis math + notifier logic)
+scripts/             make_kopelman_chart.py / make_kopelman_table.py (reported-RevPAR check)
+tests/               pytest unit tests (analysis math + notifier logic + RevPAR loader schema)
 .github/workflows/   ci.yml (lint/type/test) + daily.yml (refresh) + weekly_notify.yml (email)
-outputs/             summary.json + CSVs (regenerated each run, gitignored)
-data/                cached raw data + notifier state (gitignored)
+outputs/             summary.json + CSVs + the RevPAR chart (regenerated each run, gitignored)
+data/                cached raw data + notifier state (gitignored, except reported_revpar.csv)
 ```
 
 ## Run it
@@ -125,7 +199,7 @@ Google Trends are all keyless (set `BLS_API_KEY` only if you want a higher BLS r
 ```bash
 uv run ruff check .      # lint
 uv run ruff format .     # format
-uv run mypy src app.py config.py   # type-check
+uv run mypy src scripts app.py config.py   # type-check
 uv run pytest -q         # tests
 ```
 
