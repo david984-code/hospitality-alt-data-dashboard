@@ -34,7 +34,7 @@ def load_inputs(
     tsa_daily = tsa.fetch(force=force)
     fred = bls.fetch(force=force)
     if skip_trends:
-        print("[kopelman] --skip-trends: index is TSA + hospitality hiring only")
+        print("[revpar] --skip-trends: index is TSA + hospitality hiring only")
         trends_df = pd.DataFrame()
     else:
         trends_df = trends.fetch(force=force)

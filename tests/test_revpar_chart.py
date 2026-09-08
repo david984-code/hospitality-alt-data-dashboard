@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from scripts import make_kopelman_chart as chart
+from scripts import make_revpar_chart as chart
 from src import analysis
 
 

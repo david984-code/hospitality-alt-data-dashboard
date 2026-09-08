@@ -2,7 +2,7 @@
 
 Writes exactly one figure, outputs/index_vs_reported_revpar.png, at 1600x900.
 
-    uv run python -m scripts.make_kopelman_chart
+    uv run python -m scripts.make_revpar_chart
 
 The default layout is two panels in one figure. The left panel is the full history,
 where the COVID collapse and rebound dwarf everything else. The right panel is the
@@ -30,7 +30,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 import config
-from scripts.kopelman_common import add_common_args, build_both, summary_line
+from scripts.revpar_common import add_common_args, build_both, summary_line
 from src import analysis
 from src.data.revpar_reported import REPORTED_TICKERS
 

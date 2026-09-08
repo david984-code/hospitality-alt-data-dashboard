@@ -2,7 +2,7 @@
 
 Writes outputs/index_vs_reported_revpar.csv — the numbers behind the chart.
 
-    uv run python -m scripts.make_kopelman_table
+    uv run python -m scripts.make_revpar_table
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import argparse
 import pandas as pd
 
 import config
-from scripts.kopelman_common import add_common_args, load_inputs, summary_line, tsa_only_index
+from scripts.revpar_common import add_common_args, load_inputs, summary_line, tsa_only_index
 from src import analysis
 
 OUT_CSV = config.OUTPUT_DIR / "index_vs_reported_revpar.csv"

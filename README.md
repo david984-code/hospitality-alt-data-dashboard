@@ -154,9 +154,9 @@ or before that quarter's period end. Truncating the daily series at any period e
 earlier row unchanged, and that property is tested.
 
 ```bash
-uv run python -m scripts.make_kopelman_table   # outputs/index_vs_reported_revpar.csv, tsa_vs_reported_revpar.csv, index_components_vs_reported_revpar.csv
-uv run python -m scripts.make_kopelman_chart   # outputs/index_vs_reported_revpar.png, TSA bold, composite dashed (copy to docs/ to refresh the README image)
-uv run python -m scripts.make_kopelman_chart --index composite   # the composite as the bold line instead
+uv run python -m scripts.make_revpar_table   # outputs/index_vs_reported_revpar.csv, tsa_vs_reported_revpar.csv, index_components_vs_reported_revpar.csv
+uv run python -m scripts.make_revpar_chart   # outputs/index_vs_reported_revpar.png, TSA bold, composite dashed (copy to docs/ to refresh the README image)
+uv run python -m scripts.make_revpar_chart --index composite   # the composite as the bold line instead
 ```
 
 ## Layout
@@ -170,7 +170,7 @@ src/analysis.py      nowcast, signals, backtest, significance, risk, stress, ear
 src/pipeline.py      orchestrates fetch -> analyze -> outputs/
 src/notify.py        weekly regime-change email watcher
 app.py               Streamlit dashboard
-scripts/             make_kopelman_chart.py / make_kopelman_table.py (reported-RevPAR check)
+scripts/             make_revpar_chart.py / make_revpar_table.py (reported-RevPAR check)
 tests/               pytest unit tests (analysis math + notifier logic + RevPAR loader schema)
 .github/workflows/   ci.yml (lint/type/test) + daily.yml (refresh) + weekly_notify.yml (email)
 outputs/             summary.json + CSVs + the RevPAR chart (regenerated each run, gitignored)
