@@ -5,7 +5,7 @@
 
 ![Hospitality Alt-Data Dashboard](docs/dashboard.png)
 
-*Dashboard screenshot from the June 2026 snapshot the headline table below is computed on. The pipeline refreshes daily; the reported-RevPAR comparison further down runs on data through September 2026.*
+*Dashboard screenshot from a September 2026 run (TSA through 2026-09-06). The headline table below remains the frozen June 2026 snapshot; the reported-RevPAR comparison further down also uses data through September 2026.*
 
 A pipeline that turns free public alternative data — **TSA checkpoint throughput**, **BLS
 hospitality labor**, and **Google Trends brand search** — into a near-real-time read on US
